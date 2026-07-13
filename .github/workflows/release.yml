@@ -44,4 +44,9 @@ jobs:
       - name: Attach JAR to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" target/komm-server-*.jar --clobber
+        run: |
+          JAR=(target/komm-server-*.jar)
+          # Stable alias so the hub site's releases/latest/download/komm-server.jar
+          # link never changes across releases.
+          cp "${JAR[0]}" target/komm-server.jar
+          gh release upload "$GITHUB_REF_NAME" "${JAR[0]}" target/komm-server.jar --clobber
