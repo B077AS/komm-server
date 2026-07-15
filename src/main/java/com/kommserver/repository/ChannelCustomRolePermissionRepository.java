@@ -22,4 +22,8 @@ public interface ChannelCustomRolePermissionRepository
     @Modifying
     @Query("DELETE FROM ChannelCustomRolePermission c WHERE c.channelId = :channelId")
     void deleteByChannelId(@Param("channelId") UUID channelId);
+
+    @Modifying
+    @Query("DELETE FROM ChannelCustomRolePermission c WHERE c.customRoleId = :customRoleId")
+    void deleteByCustomRoleId(@Param("customRoleId") UUID customRoleId);
 }
