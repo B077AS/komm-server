@@ -11,8 +11,8 @@ import com.kommserver.model.dto.summary.ServerMemberSummary;
 import com.kommserver.repository.ServerMemberRepository;
 import com.kommserver.security.SecurityUtil;
 import com.kommserver.service.ChannelService;
+import com.kommserver.service.ChannelVisibilityService;
 import com.kommserver.service.PermissionService;
-import com.kommserver.websocket.managers.WebrtcRoomsManager;
 import com.kommserver.websocket.messages.WsMessage;
 import com.kommserver.websocket.messages.WsMessageType;
 import com.kommserver.websocket.messages.payloads.ChannelCreatedPayload;
@@ -46,7 +46,7 @@ public class PermissionController {
     private final SecurityUtil securityUtil;
     private final PermissionService permissionService;
     private final ChannelService channelService;
-    private final WebrtcRoomsManager webrtcRoomsManager;
+    private final ChannelVisibilityService channelVisibilityService;
     private final ServerMemberRepository serverMemberRepository;
     private final ClientMessageSender clientMessageSender;
     private final com.kommserver.websocket.senders.HubMessageSender hubMessageSender;
@@ -92,8 +92,11 @@ public class PermissionController {
             UUID serverId = securityUtil.getCurrentServerId();
             UUID userId = securityUtil.getCurrentUserId();
             ServerMember.Role targetRole = ServerMember.Role.valueOf(req.getRole().toUpperCase());
+            Map<UUID, Boolean> before = snapshotUserViewAllChannels(serverId, targetUserId);
             permissionService.changeBaseRole(serverId, userId, targetUserId, targetRole);
+            Map<UUID, Boolean> after = snapshotUserViewAllChannels(serverId, targetUserId);
             broadcastMemberRoleUpdated(serverId, targetUserId, targetRole);
+            applyUserViewChanges(serverId, targetUserId, before, after);
             hubMessageSender.send(WsMessageType.MEMBER_ROLE_UPDATED,
                     MemberRoleUpdatedPayload.builder()
                             .serverId(serverId)
@@ -119,8 +122,11 @@ public class PermissionController {
         try {
             UUID serverId = securityUtil.getCurrentServerId();
             UUID userId = securityUtil.getCurrentUserId();
+            Map<UUID, Boolean> before = snapshotUserViewAllChannels(serverId, targetUserId);
             permissionService.assignCustomRole(serverId, userId, targetUserId, roleId);
+            Map<UUID, Boolean> after = snapshotUserViewAllChannels(serverId, targetUserId);
             broadcastCustomRoleMemberAssigned(serverId, roleId, targetUserId);
+            applyUserViewChanges(serverId, targetUserId, before, after);
             return ResponseEntity.ok().build();
         } catch (SecurityException e) {
             return ErrorResponse.of(HttpStatus.FORBIDDEN, e.getMessage());
@@ -136,8 +142,11 @@ public class PermissionController {
         try {
             UUID serverId = securityUtil.getCurrentServerId();
             UUID userId = securityUtil.getCurrentUserId();
+            Map<UUID, Boolean> before = snapshotUserViewAllChannels(serverId, targetUserId);
             permissionService.removeCustomRole(serverId, userId, targetUserId, roleId);
+            Map<UUID, Boolean> after = snapshotUserViewAllChannels(serverId, targetUserId);
             broadcastCustomRoleMemberRemoved(serverId, roleId, targetUserId);
+            applyUserViewChanges(serverId, targetUserId, before, after);
             return ResponseEntity.ok().build();
         } catch (SecurityException e) {
             return ErrorResponse.of(HttpStatus.FORBIDDEN, e.getMessage());
@@ -241,9 +250,12 @@ public class PermissionController {
                 return ErrorResponse.of(HttpStatus.FORBIDDEN, "Missing permission: EDIT_CHANNEL_PERMS");
             }
             permissionService.requireAllowWithinEffectivePerms(serverId, userId, req.getAllowPermissions());
+            Map<UUID, Boolean> before = snapshotViewChannel(serverId, channelId);
             permissionService.upsertChannelCustomRolePermission(
                     channelId, customRoleId, req.getAllowPermissions(), req.getDenyPermissions());
+            Map<UUID, Boolean> after = snapshotViewChannel(serverId, channelId);
             broadcastChannelPermissionsUpdated(serverId, channelId);
+            applyViewChannelChanges(serverId, channelId, before, after);
             return ResponseEntity.ok().build();
         } catch (SecurityException e) {
             return ErrorResponse.of(HttpStatus.FORBIDDEN, e.getMessage());
@@ -263,8 +275,11 @@ public class PermissionController {
             if (!permissionService.has(userId, serverId, Permission.EDIT_CHANNEL_PERMS)) {
                 return ErrorResponse.of(HttpStatus.FORBIDDEN, "Missing permission: EDIT_CHANNEL_PERMS");
             }
+            Map<UUID, Boolean> before = snapshotViewChannel(serverId, channelId);
             permissionService.deleteChannelCustomRolePermission(channelId, customRoleId);
+            Map<UUID, Boolean> after = snapshotViewChannel(serverId, channelId);
             broadcastChannelPermissionsUpdated(serverId, channelId);
+            applyViewChannelChanges(serverId, channelId, before, after);
             return ResponseEntity.noContent().build();
         } catch (Exception e) {
             log.error("Failed to delete channel custom role permission: {}", e.getMessage(), e);
@@ -370,73 +385,39 @@ public class PermissionController {
         clientMessageSender.broadcastToServer(serverId, gson.toJson(msg));
     }
 
-    /**
-     * Captures VIEW_CHANNEL status for every online user in the server for a specific channel.
-     * Called once before and once after a permission change to detect who gained/lost visibility.
-     */
     private Map<UUID, Boolean> snapshotViewChannel(UUID serverId, UUID channelId) {
-        Set<UUID> online = clientMessageSender.getOnlineUserIds(serverId);
-        Map<UUID, Boolean> snapshot = new HashMap<>();
-        for (UUID uid : online) {
-            snapshot.put(uid, permissionService.hasInChannel(uid, serverId, channelId, Permission.VIEW_CHANNEL));
-        }
-        return snapshot;
+        return channelVisibilityService.snapshotViewChannel(serverId, channelId);
     }
 
-    /**
-     * Compares before/after VIEW_CHANNEL snapshots and sends CHANNEL_DELETED or CHANNEL_CREATED
-     * to each user whose visibility changed.
-     */
     private void applyViewChannelChanges(UUID serverId, UUID channelId,
                                           Map<UUID, Boolean> before, Map<UUID, Boolean> after) {
-        Set<UUID> allUsers = new HashSet<>(before.keySet());
-        allUsers.addAll(after.keySet());
-        for (UUID uid : allUsers) {
-            boolean hadView = before.getOrDefault(uid, false);
-            boolean hasView = after.getOrDefault(uid, false);
-            sendUserViewChannelChange(serverId, channelId, uid, hadView, hasView);
-        }
+        channelVisibilityService.applyViewChannelChanges(serverId, channelId, before, after);
     }
 
-    /** Sends CHANNEL_DELETED or CHANNEL_CREATED to a specific user when their visibility changed. */
+    private Map<UUID, Boolean> snapshotUserViewAllChannels(UUID serverId, UUID targetUserId) {
+        return channelVisibilityService.snapshotUserViewAllChannels(serverId, targetUserId);
+    }
+
+    private void applyUserViewChanges(UUID serverId, UUID targetUserId,
+                                       Map<UUID, Boolean> before, Map<UUID, Boolean> after) {
+        channelVisibilityService.applyUserViewChanges(serverId, targetUserId, before, after);
+    }
+
     private void sendUserViewChannelChange(UUID serverId, UUID channelId, UUID userId,
                                             boolean hadView, boolean hasView) {
-        if (hadView == hasView) return;
-        if (!hasView) {
-            // Never hide a channel from someone currently connected to it in voice
-            if (webrtcRoomsManager.isUserInChannel(serverId, channelId, userId)) return;
-            WsMessage msg = WsMessage.builder()
-                    .type(WsMessageType.CHANNEL_DELETED)
-                    .payload(ChannelDeletedPayload.builder()
-                            .channelId(channelId).serverId(serverId).build())
-                    .build();
-            clientMessageSender.sendToUser(serverId, userId, gson.toJson(msg));
-        } else {
-            channelService.getChannelById(serverId, channelId).ifPresent(ch -> {
-                WsMessage msg = WsMessage.builder()
-                        .type(WsMessageType.CHANNEL_CREATED)
-                        .payload(ChannelCreatedPayload.builder()
-                                .channelId(ch.getChannelId())
-                                .serverId(ch.getServerId())
-                                .channelName(ch.getChannelName())
-                                .channelType(ch.getChannelType())
-                                .description(ch.getDescription())
-                                .position(ch.getPosition())
-                                .icon(ch.getIcon())
-                                .build())
-                        .build();
-                clientMessageSender.sendToUser(serverId, userId, gson.toJson(msg));
-            });
-        }
+        channelVisibilityService.sendUserViewChannelChange(serverId, channelId, userId, hadView, hasView);
     }
 
     private void broadcastChannelPermissionsUpdated(UUID serverId, UUID channelId) {
-        List<ChannelRolePermission> perms = permissionService.getChannelPermissions(channelId);
-        Map<String, ChannelPermissionsUpdatedPayload.RoleOverride> overrides = perms.stream()
-                .collect(Collectors.toMap(
-                        p -> p.getRole().name(),
-                        p -> new ChannelPermissionsUpdatedPayload.RoleOverride(
-                                p.getAllowPermissions(), p.getDenyPermissions())));
+        // Include both base-role and custom-role overrides (keyed by role name / roleId), matching
+        // the GET endpoint format — clients replace their whole override map with this payload.
+        Map<String, ChannelPermissionsUpdatedPayload.RoleOverride> overrides = new HashMap<>();
+        permissionService.getChannelPermissions(channelId).forEach(p ->
+                overrides.put(p.getRole().name(), new ChannelPermissionsUpdatedPayload.RoleOverride(
+                        p.getAllowPermissions(), p.getDenyPermissions())));
+        permissionService.getChannelCustomRolePermissions(channelId).forEach(p ->
+                overrides.put(p.getCustomRoleId().toString(), new ChannelPermissionsUpdatedPayload.RoleOverride(
+                        p.getAllowPermissions(), p.getDenyPermissions())));
         WsMessage msg = WsMessage.builder()
                 .type(WsMessageType.CHANNEL_PERMISSIONS_UPDATED)
                 .payload(ChannelPermissionsUpdatedPayload.builder()

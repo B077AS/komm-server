@@ -138,6 +138,7 @@ public class PermissionService {
 
     // ── Base role management ──────────────────────────────────────────────────
 
+    @CacheEvict(value = "channelPerms", allEntries = true)
     @Transactional
     public void changeBaseRole(UUID serverId, UUID userId, UUID targetUserId, ServerMember.Role targetRole) {
         requirePermission(userId, serverId, Permission.EDIT_SERVER_PERMS);
@@ -249,6 +250,7 @@ public class PermissionService {
         requireWithinCallerBasePerms(serverId, userId, entity.getPermissions());
 
         memberCustomRoleRepository.deleteByRoleId(roleId);
+        channelCustomRolePermissionRepository.deleteByCustomRoleId(roleId);
         customRoleRepository.delete(entity);
 
         log.info("Deleted custom role {} from serverId={}", roleId, serverId);

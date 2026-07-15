@@ -2,6 +2,7 @@ package com.kommserver.websocket.handlers;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import com.kommserver.service.ChannelVisibilityService;
 import com.kommserver.service.PermissionService;
 import com.kommserver.websocket.interfaces.HubInboundMessageHandler;
 import com.kommserver.websocket.messages.WsMessage;
@@ -24,6 +25,7 @@ public class PermDeleteCustomRoleRequestHandler implements HubInboundMessageHand
 
     private final Gson gson;
     private final PermissionService permissionService;
+    private final ChannelVisibilityService channelVisibilityService;
     private final HubMessageSender hubMessageSender;
     private final ClientMessageSender clientMessageSender;
 
@@ -34,8 +36,13 @@ public class PermDeleteCustomRoleRequestHandler implements HubInboundMessageHand
     public void handle(JsonObject payload) {
         PermDeleteCustomRoleRequestPayload req = gson.fromJson(payload, PermDeleteCustomRoleRequestPayload.class);
         try {
+            // Deleting a role removes it from all members — that can change which channels its
+            // former members are allowed to see, so diff visibility across all online users.
+            var before = channelVisibilityService.snapshotAllUsersAllChannels(req.getServerId());
             permissionService.deleteCustomRole(req.getServerId(), req.getUserId(), req.getRoleId());
+            var after = channelVisibilityService.snapshotAllUsersAllChannels(req.getServerId());
             broadcastCustomRoleDeleted(req.getServerId(), req.getRoleId());
+            channelVisibilityService.applyAllUserViewChanges(req.getServerId(), before, after);
             hubMessageSender.send(WsMessageType.PERM_DELETE_CUSTOM_ROLE_RESPONSE, PermProxyResponsePayload.builder()
                     .correlationId(req.getCorrelationId()).success(true).build());
         } catch (Exception e) {
