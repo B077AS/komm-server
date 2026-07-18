@@ -61,9 +61,13 @@ public class ReactionService {
         MessageReaction.MessageReactionId reactionId =
                 new MessageReaction.MessageReactionId(messageId, userId, emoji);
 
-        if (!reactionRepository.existsById(reactionId)) {
-            reactionRepository.save(MessageReaction.builder().id(reactionId).message(message).build());
+        // Duplicate add (double-click, retry): the row already exists, so don't
+        // broadcast again — clients count events, and a re-broadcast would inflate
+        // their counters even though nothing changed.
+        if (reactionRepository.existsById(reactionId)) {
+            return;
         }
+        reactionRepository.save(MessageReaction.builder().id(reactionId).message(message).build());
 
         ChannelMessageReactionAdd payload = ChannelMessageReactionAdd.builder()
                 .messageId(messageId)
@@ -103,7 +107,15 @@ public class ReactionService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not connected to the voice channel");
         }
 
-        reactionRepository.deleteById(new MessageReaction.MessageReactionId(messageId, userId, emoji));
+        MessageReaction.MessageReactionId reactionId =
+                new MessageReaction.MessageReactionId(messageId, userId, emoji);
+
+        // Same idempotency rule as addReaction: if there is nothing to delete,
+        // don't broadcast — receivers would decrement a counter that never changed.
+        if (!reactionRepository.existsById(reactionId)) {
+            return;
+        }
+        reactionRepository.deleteById(reactionId);
 
         ChannelMessageReactionRemove payload = ChannelMessageReactionRemove.builder()
                 .messageId(messageId)
