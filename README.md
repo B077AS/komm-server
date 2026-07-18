@@ -35,7 +35,7 @@ You don't clone this repo to host a server — you download a JAR that is alread
 
 1. **Create your server** — register an installation from your [kommvoice.com dashboard](https://kommvoice.com/dashboard). The hub prepares a JAR **pre-configured just for you** (your single-use setup token and port configuration are injected into the JAR before it's served).
 2. **Run one JAR** — start it on any machine with Java 21. The embedded PostgreSQL database and embedded LiveKit media server mean there is nothing else to install. No database setup, no config files, no reverse proxy required.
-3. **It verifies itself** — on first boot the server presents its setup token and a P-384 certificate signing request to the hub; the hub's built-in CA signs the certificate and the installation goes **online** over a persistent WebSocket.
+3. **It verifies itself** — on first boot the server presents its setup token and a P-384 certificate signing request to the hub; the hub's built-in CA signs the certificate and the installation goes **online** over a persistent WebSocket. That certificate is also your server's **TLS identity**: from the next start it serves HTTPS/WSS automatically — no domain name, no certbot, no reverse proxy.
 4. **Invite your people** — share an invite link. Friends connect **directly** to your server; messages and voice never pass through the hub.
 
 > 🚀 **Coming soon:** a dedicated **server launcher**, so installing and updating your community server is fully automatic — no more manual JAR downloads when a new version ships.
@@ -109,6 +109,7 @@ Channels have two independent permission layers:
 ## Security model
 
 - **X.509 mutual authentication** — your server proves its identity to the hub with a certificate signed by the hub's CA (P-384 elliptic curve), obtained automatically on first boot.
+- **Automatic TLS** — the hub-signed certificate doubles as your server's HTTPS/WSS certificate. Clients validate it against the hub CA and check the installation identity embedded in it — stronger than a hostname check, since a hijacked IP or DNS entry can't present a valid certificate for your installation. Voice media is independently encrypted by WebRTC (SRTP/DTLS).
 - **Short-lived connection tickets** — clients join with single-purpose 60-second JWT tickets issued by the hub; `UsedTicketStore` makes each one strictly single-use.
 - **Local ES-signed sessions** — after joining, sessions use the server's own locally generated EC key pair. No shared secrets, nothing to leak.
 - **Data stays with you** — messages, voice, files and permissions never leave your machine. The hub cannot read any of it.
@@ -131,7 +132,7 @@ On first run the server creates, next to the JAR:
 | Directory | Contents |
 |---|---|
 | `komm-postgres-data/` | The embedded PostgreSQL data — **your messages live here, back it up** |
-| `keys/` | The server's EC key pair used to sign client sessions |
+| `keys/` | The server's EC key pair (signs client sessions) and its hub-issued TLS certificate (`tls-cert.pem`) |
 | `uploads/` | File attachments and soundboard audio |
 | `logs/` | Rolling logs (10 MB per file, 30-day retention, 1 GB cap) |
 
@@ -162,6 +163,7 @@ Everything ships with working defaults in `src/main/resources/application.proper
 | `api.url` / `websocket.url` | `localhost:8085` | The hub this server registers with |
 | `jwt.access-token.expiration` | `900` (15 min) | Client access-token lifetime (seconds) |
 | `jwt.refresh-token.expiration` | `2592000` (30 days) | Refresh-token lifetime (seconds) |
+| `komm.tls.cert-file` | `keys/tls-cert.pem` | Hub-issued TLS certificate; when present the server boots in HTTPS/WSS mode (delete to fall back to plain HTTP) |
 | `komm.attachments.base-path` / `komm.soundboards.base-path` | `uploads/…` | Upload storage |
 | `spring.servlet.multipart.max-file-size` | `50MB` | Attachment size limit |
 
@@ -191,6 +193,8 @@ Everything ships with working defaults in `src/main/resources/application.proper
 **Do I need to know anything about databases or WebRTC to host a server?** No. The database and the media server are embedded — download the JAR from your dashboard, run it with Java 21, done.
 
 **Can the hub read my community's messages?** No. Clients connect directly to your server after a one-time ticket exchange; messages, voice and files never pass through the hub.
+
+**Is traffic to my server encrypted?** Yes. Your server serves HTTPS/WSS with a certificate the hub CA signs automatically at setup — clients verify it belongs to exactly your installation. No domain or certificate purchase needed. Voice audio is additionally encrypted by WebRTC (SRTP).
 
 **Can I move my server to another machine?** Yes — move the JAR together with `komm-postgres-data/`, `keys/` and `uploads/`, and start it again.
 
