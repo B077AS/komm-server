@@ -5,6 +5,7 @@ import com.kommserver.model.dto.request.InstallationValidationRequest;
 import com.kommserver.model.dto.response.InstallationValidationResponse;
 import com.kommserver.repository.InstallationRepository;
 import com.kommserver.security.JwtUtil;
+import com.kommserver.security.TlsMaterialService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
@@ -23,6 +24,7 @@ public class ActivationService {
     private final JwtUtil jwtUtil;
     private final RestTemplate restTemplate;
     private final InstallationRepository installationRepository;
+    private final TlsMaterialService tlsMaterialService;
 
     @Value("${api.url}")
     private String hubBaseUrl;
@@ -60,6 +62,10 @@ public class ActivationService {
             installationRepository.save(installation);
 
             jwtUtil.setHubPublicKeyFromPem(installationResponse.getHubPublicKey());
+
+            if (tlsMaterialService.ensureCertificateFile(installationResponse.getCertificate())) {
+                log.info("TLS material installed — HTTPS/WSS will be served after the next restart");
+            }
 
             log.info("Registration complete — certificate issued by hub CA");
             return true;

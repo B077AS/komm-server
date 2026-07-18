@@ -3,6 +3,7 @@ package com.kommserver.websocket;
 import com.kommserver.model.db.Installation;
 import com.kommserver.repository.InstallationRepository;
 import com.kommserver.security.JwtUtil;
+import com.kommserver.security.TlsMaterialService;
 import com.kommserver.websocket.managers.HubSessionManager;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ public class HubConnector {
     private final HubSessionManager hubSessionManager;
     private final ReconnectScheduler reconnectScheduler;
     private final JwtUtil jwtUtil;
+    private final TlsMaterialService tlsMaterialService;
 
     @Value("${websocket.url}")
     private String hubWsUrl;
@@ -47,6 +49,8 @@ public class HubConnector {
         WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
         headers.add("Authorization", "Certificate " + encodedCert);
         headers.add("X-Connect-Token", connectToken);
+        // Tells the hub whether app clients should reach us via wss:// or ws://
+        headers.add("X-Tls-Enabled", String.valueOf(tlsMaterialService.isServingTls()));
 
         StandardWebSocketClient client = new StandardWebSocketClient();
         client.execute(hubSessionManager, headers, URI.create(hubWsUrl))
