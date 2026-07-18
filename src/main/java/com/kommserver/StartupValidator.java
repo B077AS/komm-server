@@ -2,6 +2,7 @@ package com.kommserver;
 
 import com.kommserver.model.db.Installation;
 import com.kommserver.repository.InstallationRepository;
+import com.kommserver.security.TlsMaterialService;
 import com.kommserver.service.ActivationService;
 import com.kommserver.sfu.SfuLauncher;
 import com.kommserver.websocket.HubConnector;
@@ -26,6 +27,7 @@ public class StartupValidator implements ApplicationRunner {
     private final InstallationRepository installationRepository;
     private final ActivationService activationService;
     private final SfuLauncher sfuLauncher;   // ← new
+    private final TlsMaterialService tlsMaterialService;
 
     @Value("${server.port}")
     private String serverPort;
@@ -61,6 +63,13 @@ public class StartupValidator implements ApplicationRunner {
 
         log.debug("Installation check passed: [{}] on port {}",
                 installation.getInstallationName(), serverPort);
+
+        // Upgrades from pre-TLS builds: the certificate exists only in the DB — put it
+        // on disk so the next boot serves HTTPS (see TlsEnvironmentPostProcessor).
+        if (tlsMaterialService.ensureCertificateFile(installation.getCertificate())) {
+            log.warn("TLS material installed — restart this server to start serving HTTPS/WSS");
+        }
+        log.info("Serving mode: {}", tlsMaterialService.isServingTls() ? "HTTPS/WSS (hub-CA TLS)" : "plain HTTP/WS");
 
         hubConnector.connect();
         sfuLauncher.start();   // ← start SFU after normal boot
