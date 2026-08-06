@@ -1,3 +1,20 @@
+# Release pipeline for komm-server.
+#
+# Release flow (create a GitHub release with tag e.g. v0.0.3):
+#   1. jar              — sets the Maven version from the tag, builds the fat jar,
+#                          attaches it (plus a stable komm-server.jar alias) to the
+#                          release.
+#   2. windows-installer /
+#      linux-tarball     — check out komm-server-launcher@latest-release-tag and use
+#                          its packaging scripts to build a full installer/tarball
+#                          seeded with the EXACT jar built in step 1, so downloading
+#                          either one produces a working, running service — not just
+#                          an installed CLI someone still has to point at a jar.
+#                          Attached to this SAME release.
+#
+# Mirrors the komm client's release workflow, which does the same thing against
+# komm-launcher for its Windows installer / Linux AppImage.
+
 name: Build release JAR
 
 on:
@@ -8,8 +25,10 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  jar:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,12 +40,16 @@ jobs:
           java-version: '21'
           cache: maven
 
+      - name: Resolve version from release tag
+        id: v
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       # Stamp the Maven project version with the release tag (strips a leading "v"),
       # so the built JAR is named after the release, e.g. v1.2.0 -> komm-server-1.2.0.jar
       - name: Set project version from release tag
         run: |
           chmod +x mvnw
-          ./mvnw -B -ntp versions:set -DnewVersion="${GITHUB_REF_NAME#v}" -DgenerateBackupPoms=false
+          ./mvnw -B -ntp versions:set -DnewVersion="${{ steps.v.outputs.version }}" -DgenerateBackupPoms=false
 
       # The committed defaults point at a local hub for development; the released
       # JAR must talk to the production hub instead.
@@ -41,12 +64,147 @@ jobs:
       - name: Build JAR
         run: ./mvnw -B -ntp clean package -DskipTests
 
+      - name: Stable-named alias
+        run: |
+          JAR=(target/komm-server-*.jar)
+          # Stable alias so the hub site's releases/latest/download/komm-server.jar
+          # link never changes across releases, and so it's the fixed asset name
+          # komm-server-launcher's packaging scripts (and komm-hub's future sync)
+          # expect regardless of version.
+          cp "${JAR[0]}" target/komm-server.jar
+
       - name: Attach JAR to the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           JAR=(target/komm-server-*.jar)
-          # Stable alias so the hub site's releases/latest/download/komm-server.jar
-          # link never changes across releases.
-          cp "${JAR[0]}" target/komm-server.jar
           gh release upload "$GITHUB_REF_NAME" "${JAR[0]}" target/komm-server.jar --clobber
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-jar
+          path: target/komm-server.jar
+          if-no-files-found: error
+
+  windows-installer:
+    name: Windows installer
+    needs: jar
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Resolve launcher release tag
+        id: launcher-v
+        run: |
+          TAG=$(gh release view --repo B077AS/komm-server-launcher --json tagName -q .tagName)
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      # Pinned to the launcher's own latest release (not a moving `main` HEAD), same
+      # reason as the client/komm-launcher pair: reproducible builds, and the launcher
+      # jar checked out here is already correctly self-versioned from its own release.
+      - name: Check out komm-server-launcher (latest release)
+        uses: actions/checkout@v4
+        with:
+          repository: B077AS/komm-server-launcher
+          ref: ${{ steps.launcher-v.outputs.tag }}
+          path: launcher
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: launcher/pom.xml
+
+      - name: Build launcher jar
+        working-directory: launcher
+        run: mvn -B clean package
+
+      - name: Get server jar (from this run)
+        uses: actions/download-artifact@v4
+        with:
+          name: server-jar
+          path: server-jar
+
+      - name: Download WinSW
+        run: curl -Lo winsw.exe https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe
+
+      - name: Stage installer inputs
+        run: |
+          mkdir -p installer-input
+          cp launcher/target/komm-server-launcher.jar installer-input/
+          cp winsw.exe installer-input/komm-server-service.exe
+          cp launcher/packaging/windows/kommserver.cmd installer-input/
+          cp server-jar/komm-server.jar installer-input/
+          echo "server.version=${{ needs.jar.outputs.version }}" > installer-input/launcher.properties
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: cmd
+        run: '"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=${{ needs.jar.outputs.version }} /DSourceDir=${{ github.workspace }}\installer-input /DOutputDir=${{ github.workspace }}\installer launcher\packaging\windows\komm-server-launcher.iss'
+
+      - name: Attach installer to the release
+        run: |
+          V="${{ needs.jar.outputs.version }}"
+          # Stable alias so a future releases/latest/download link never changes.
+          cp "installer/Komm-Server-Setup-$V.exe" "installer/Komm-Server-Setup.exe"
+          gh release upload "$GITHUB_REF_NAME" \
+            "installer/Komm-Server-Setup-$V.exe" \
+            "installer/Komm-Server-Setup.exe" \
+            --clobber
+
+  linux-tarball:
+    name: Linux tarball
+    needs: jar
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Resolve launcher release tag
+        id: launcher-v
+        run: |
+          TAG=$(gh release view --repo B077AS/komm-server-launcher --json tagName -q .tagName)
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Check out komm-server-launcher (latest release)
+        uses: actions/checkout@v4
+        with:
+          repository: B077AS/komm-server-launcher
+          ref: ${{ steps.launcher-v.outputs.tag }}
+          path: launcher
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: launcher/pom.xml
+
+      - name: Build launcher jar
+        working-directory: launcher
+        run: mvn -B clean package
+
+      - name: Get server jar (from this run)
+        uses: actions/download-artifact@v4
+        with:
+          name: server-jar
+          path: server-jar
+
+      - name: Assemble tarball
+        run: |
+          STAGE=komm-server-launcher-linux
+          mkdir -p "$STAGE"
+          cp launcher/target/komm-server-launcher.jar "$STAGE/"
+          cp launcher/packaging/linux/install.sh launcher/packaging/linux/uninstall.sh "$STAGE/"
+          cp server-jar/komm-server.jar "$STAGE/"
+          echo "${{ needs.jar.outputs.version }}" > "$STAGE/SERVER_VERSION"
+          chmod +x "$STAGE"/install.sh "$STAGE"/uninstall.sh
+          tar czf komm-server-launcher-linux-amd64.tar.gz "$STAGE"
+
+      - name: Attach tarball to the release
+        run: gh release upload "$GITHUB_REF_NAME" komm-server-launcher-linux-amd64.tar.gz --clobber

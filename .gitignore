@@ -39,4 +39,5 @@ build/
 /uploads/
 /yt/
 /CLAUDE.md
-/src/main/resources/META-INF/kommserver.mf
+/setup-token.txt
+/installation-ports.properties
