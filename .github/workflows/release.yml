@@ -156,6 +156,7 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" \
             "installer/Komm-Server-Setup-$V.exe" \
             "installer/Komm-Server-Setup.exe" \
+            --repo "${{ github.repository }}" \
             --clobber
 
   linux-tarball:
@@ -207,4 +208,4 @@ jobs:
           tar czf komm-server-launcher-linux-amd64.tar.gz "$STAGE"
 
       - name: Attach tarball to the release
-        run: gh release upload "$GITHUB_REF_NAME" komm-server-launcher-linux-amd64.tar.gz --clobber
+        run: gh release upload "$GITHUB_REF_NAME" komm-server-launcher-linux-amd64.tar.gz --repo "${{ github.repository }}" --clobber
