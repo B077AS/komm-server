@@ -11,7 +11,7 @@ import java.nio.file.Path;
 import java.util.Properties;
 
 /**
- * Ports chosen on the hub dashboard when the installation was created arrive in the
+ * Ports chosen in the Komm client when the installation was created arrive in the
  * activation response now (see {@link InstallationValidationResponse}) rather than being
  * baked into a downloaded jar — the jar this server runs is a generic, unmodified build,
  * same reasoning as {@link com.kommserver.security.TlsMaterialService} for the hub-issued
@@ -42,7 +42,7 @@ public class PortConfigService {
                 return false;
             }
             try (var out = Files.newOutputStream(path)) {
-                props.store(out, "Ports chosen on the hub dashboard at installation creation — do not edit by hand");
+                props.store(out, "Ports chosen in the Komm client at installation creation — do not edit by hand");
             }
             log.info("Port configuration written to {}", path.toAbsolutePath());
             return true;

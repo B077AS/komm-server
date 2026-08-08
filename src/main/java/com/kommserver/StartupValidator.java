@@ -101,8 +101,9 @@ public class StartupValidator implements ApplicationRunner {
 
     // The server jar is now a generic, unmodified build (see komm-server-launcher) — it
     // no longer carries a per-installation setup token in its own manifest. The launcher's
-    // `kommserver install-service` prompts for the verification code shown on the hub
-    // dashboard and writes it here before the service is ever started.
+    // `kommserver install-service` prompts for the verification code shown in the Komm
+    // client (installation card → "Get Verification Code") and writes it here before the
+    // service is ever started.
     private String readSetupTokenFromFile() {
         Path path = Path.of(setupTokenFile);
         if (!Files.isReadable(path)) {

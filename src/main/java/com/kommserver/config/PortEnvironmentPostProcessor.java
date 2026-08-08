@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.Properties;
 
 /**
- * Applies the ports chosen on the hub dashboard at installation creation (written to disk
+ * Applies the ports chosen in the Komm client at installation creation (written to disk
  * by {@link PortConfigService} at activation time) — same "takes effect after a restart"
  * shape as {@link TlsEnvironmentPostProcessor}, registered alongside it in spring.factories.
  */
