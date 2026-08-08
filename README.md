@@ -119,7 +119,29 @@ Channels have two independent permission layers:
 
 ## Running your server
 
-The recommended way is [komm-server-launcher](https://github.com/B077AS/komm-server-launcher), which installs komm-server as a real OS service (Windows Service / systemd), prompts for your verification code, and keeps it updated. Otherwise, download the latest `komm-server-<version>.jar` from this repo's [releases](https://github.com/B077AS/komm-server/releases), drop your verification code from the Komm client into a `setup-token.txt` next to it, and:
+**Use [komm-server-launcher](https://github.com/B077AS/komm-server-launcher).** It installs komm-server as a real OS service (Windows Service / systemd) instead of a bare process in a terminal — starts at boot, restarts on crash, updates in place with `kommserver update`, and prompts you for your verification code as part of setup. The installer/tarball are built by this repo's own release workflow (seeded with that release's exact server jar), so grab them from **this repo's** [releases](https://github.com/B077AS/komm-server/releases/latest), not komm-server-launcher's:
+
+**Windows:** download and run `Komm-Server-Setup-<version>.exe` from the [latest release](https://github.com/B077AS/komm-server/releases/latest). It seeds a working, already-running service in one pass, prompting for your verification code as it goes.
+
+**Linux:**
+```bash
+curl -LO https://github.com/B077AS/komm-server/releases/latest/download/komm-server-launcher-linux-amd64.tar.gz
+tar xzf komm-server-launcher-linux-amd64.tar.gz
+cd komm-server-launcher-linux
+sudo ./install.sh
+```
+
+Then, on either platform, if the installer didn't already leave you with a running service:
+```
+kommserver update            # downloads the latest komm-server jar
+kommserver install-service   # registers the OS service (prompts for your verification code)
+kommserver start
+kommserver status
+```
+
+### Running the bare jar instead
+
+If you'd rather not run komm-server as a managed OS service, download the plain `komm-server-<version>.jar` from the same [releases](https://github.com/B077AS/komm-server/releases) page, drop your verification code from the Komm client into a `setup-token.txt` next to it, and:
 
 ```bash
 java -jar komm-server.jar
@@ -146,7 +168,7 @@ mvn spring-boot:run
 
 Note that a source build has no setup token baked in — a real one is generated when you create an installation in the [Komm](https://github.com/B077AS/komm) client and is supplied at runtime via `setup-token.txt` (see `komm.setup-token.file` below), never baked into the jar. To develop end-to-end, run a local [komm-hub](https://github.com/B077AS/komm-hub) (default `http://localhost:8085`, matching `api.url` / `websocket.url` in `application.properties`) and create an installation against it from the client.
 
-**Official releases** are built automatically by GitHub Actions (`.github/workflows/release.yml`) whenever a release is published: the project version is stamped from the release tag, the hub URLs are switched from the localhost development defaults to the production hub at `kommvoice.com`, and the resulting `komm-server-<version>.jar` is attached to the release.
+**Official releases** are built automatically by GitHub Actions (`.github/workflows/release.yml`) whenever a release is published: the project version is stamped from the release tag, the hub URLs are switched from the localhost development defaults to the production hub at `kommvoice.com`, and the resulting `komm-server-<version>.jar` is attached to the release — along with the Windows installer and Linux tarball, built in parallel jobs that check out [komm-server-launcher](https://github.com/B077AS/komm-server-launcher)'s latest release and seed its packaging scripts with this exact jar.
 
 ### Configuration at a glance
 
