@@ -1,5 +1,6 @@
 package com.kommserver.service;
 
+import com.kommserver.config.PortConfigService;
 import com.kommserver.model.db.Installation;
 import com.kommserver.model.dto.request.InstallationValidationRequest;
 import com.kommserver.model.dto.response.InstallationValidationResponse;
@@ -25,6 +26,7 @@ public class ActivationService {
     private final RestTemplate restTemplate;
     private final InstallationRepository installationRepository;
     private final TlsMaterialService tlsMaterialService;
+    private final PortConfigService portConfigService;
 
     @Value("${api.url}")
     private String hubBaseUrl;
@@ -65,6 +67,10 @@ public class ActivationService {
 
             if (tlsMaterialService.ensureCertificateFile(installationResponse.getCertificate())) {
                 log.info("TLS material installed — HTTPS/WSS will be served after the next restart");
+            }
+
+            if (portConfigService.applyPorts(installationResponse)) {
+                log.info("Port configuration installed — the configured ports will be used after the next restart");
             }
 
             log.info("Registration complete — certificate issued by hub CA");

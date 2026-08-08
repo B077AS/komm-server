@@ -31,14 +31,12 @@ This repo is the piece a **community owner** runs. Everything that happens insid
 
 ## Spin up a community in minutes
 
-You don't clone this repo to host a server — you download a JAR that is already configured for you:
+You don't clone this repo to host a server — the server jar itself is generic and unconfigured; everything installation-specific is set up from the **Komm desktop client**, not a website:
 
-1. **Create your server** — register an installation from your [kommvoice.com dashboard](https://kommvoice.com/dashboard). The hub prepares a JAR **pre-configured just for you** (your single-use setup token and port configuration are injected into the JAR before it's served).
-2. **Run one JAR** — start it on any machine with Java 21. The embedded PostgreSQL database and embedded LiveKit media server mean there is nothing else to install. No database setup, no config files, no reverse proxy required.
-3. **It verifies itself** — on first boot the server presents its setup token and a P-384 certificate signing request to the hub; the hub's built-in CA signs the certificate and the installation goes **online** over a persistent WebSocket. That certificate is also your server's **TLS identity**: from the next start it serves HTTPS/WSS automatically — no domain name, no certbot, no reverse proxy.
+1. **Create your installation in the [Komm](https://github.com/B077AS/komm) client** — name it, pick your ports, and the client generates a P-384 CSR for it locally. This gets you a one-time verification code, shown on that installation's card (**Get Verification Code**, while it's still unverified).
+2. **Get the server running** — either install it as a proper OS service with [komm-server-launcher](https://github.com/B077AS/komm-server-launcher) (`kommserver install-service` prompts for the verification code and handles everything), or download the plain jar yourself and run `java -jar komm-server.jar`, pasting the code into `setup-token.txt` next to it first. The embedded PostgreSQL database and embedded LiveKit media server mean there is nothing else to install — no database setup, no config files, no reverse proxy.
+3. **It verifies itself** — on first boot the server presents that setup token and its CSR to the hub; the hub's built-in CA signs the certificate and the installation goes **online** over a persistent WebSocket. That certificate is also your server's **TLS identity**: from the next start it serves HTTPS/WSS automatically — no domain name, no certbot, no reverse proxy.
 4. **Invite your people** — share an invite link. Friends connect **directly** to your server; messages and voice never pass through the hub.
-
-> 🚀 **Coming soon:** a dedicated **server launcher**, so installing and updating your community server is fully automatic — no more manual JAR downloads when a new version ships.
 
 ## What the server does
 
@@ -121,7 +119,7 @@ Channels have two independent permission layers:
 
 ## Running your server
 
-Download your pre-configured JAR from the [dashboard](https://kommvoice.com/dashboard) and:
+The recommended way is [komm-server-launcher](https://github.com/B077AS/komm-server-launcher), which installs komm-server as a real OS service (Windows Service / systemd), prompts for your verification code, and keeps it updated. Otherwise, download the latest `komm-server-<version>.jar` from this repo's [releases](https://github.com/B077AS/komm-server/releases), drop your verification code from the Komm client into a `setup-token.txt` next to it, and:
 
 ```bash
 java -jar komm-server.jar
@@ -136,8 +134,6 @@ On first run the server creates, next to the JAR:
 | `uploads/` | File attachments and soundboard audio |
 | `logs/` | Rolling logs (10 MB per file, 30-day retention, 1 GB cap) |
 
-> A **server launcher** is planned for the near future: it will install the server, keep it updated and restart it across versions automatically, replacing the manual download-and-run flow above.
-
 ## Building from source (developers)
 
 ```bash
@@ -148,7 +144,7 @@ mvn clean package -DskipTests
 mvn spring-boot:run
 ```
 
-Note that a source build has no setup token baked in — the token is injected into the JAR's manifest by the hub when you download it from a dashboard. To develop end-to-end, run a local [komm-hub](https://github.com/B077AS/komm-hub) (default `http://localhost:8085`, matching `api.url` / `websocket.url` in `application.properties`) and register an installation there.
+Note that a source build has no setup token baked in — a real one is generated when you create an installation in the [Komm](https://github.com/B077AS/komm) client and is supplied at runtime via `setup-token.txt` (see `komm.setup-token.file` below), never baked into the jar. To develop end-to-end, run a local [komm-hub](https://github.com/B077AS/komm-hub) (default `http://localhost:8085`, matching `api.url` / `websocket.url` in `application.properties`) and create an installation against it from the client.
 
 **Official releases** are built automatically by GitHub Actions (`.github/workflows/release.yml`) whenever a release is published: the project version is stamped from the release tag, the hub URLs are switched from the localhost development defaults to the production hub at `kommvoice.com`, and the resulting `komm-server-<version>.jar` is attached to the release.
 
@@ -183,14 +179,15 @@ Everything ships with working defaults in `src/main/resources/application.proper
 
 | Repo | What it is |
 |---|---|
-| [komm](https://github.com/B077AS/komm) | Desktop client (JavaFX, Windows & Linux) |
-| [komm-launcher](https://github.com/B077AS/komm-launcher) | Auto-updating launcher — Windows installer & Linux AppImage |
+| [komm](https://github.com/B077AS/komm) | Desktop client (JavaFX, Windows & Linux) — where you create and manage installations |
+| [komm-launcher](https://github.com/B077AS/komm-launcher) | Auto-updating launcher for the desktop client — Windows installer & Linux AppImage |
 | komm-server | This repo — self-hosted community server (single JAR, embedded database) |
+| [komm-server-launcher](https://github.com/B077AS/komm-server-launcher) | Installs, updates, and runs komm-server as an OS service |
 | [komm-hub](https://github.com/B077AS/komm-hub) | Accounts, friends & DMs, server directory, CA, and the kommvoice.com website |
 
 ## FAQ
 
-**Do I need to know anything about databases or WebRTC to host a server?** No. The database and the media server are embedded — download the JAR from your dashboard, run it with Java 21, done.
+**Do I need to know anything about databases or WebRTC to host a server?** No. The database and the media server are embedded — create the installation in the Komm client, get the jar running (ideally via komm-server-launcher), done.
 
 **Can the hub read my community's messages?** No. Clients connect directly to your server after a one-time ticket exchange; messages, voice and files never pass through the hub.
 
@@ -198,7 +195,7 @@ Everything ships with working defaults in `src/main/resources/application.proper
 
 **Can I move my server to another machine?** Yes — move the JAR together with `komm-postgres-data/`, `keys/` and `uploads/`, and start it again.
 
-**How do updates work?** Currently by downloading the new JAR from your dashboard and swapping it in (your data directories are untouched). The upcoming **server launcher** will automate installs and updates entirely.
+**How do updates work?** [komm-server-launcher](https://github.com/B077AS/komm-server-launcher)'s `kommserver update` checks GitHub for the latest release and swaps it in for you (your data directories are untouched). Without it, download the new JAR yourself and replace the old one.
 
 ## License
 
