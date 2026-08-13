@@ -1,4 +1,7 @@
-# komm-server
+<h1 align="center">
+  <img src="src/main/resources/icon.png" alt="Komm icon" width="80"><br>
+  komm-server
+</h1>
 
 <p align="center">
   <b>The self-hosted community server for <a href="https://kommvoice.com">Komm</a> — a free, self-hosted voice, video &amp; text chat platform.</b><br>
