@@ -90,5 +90,6 @@ public enum WsMessageType {
     SERVER_DELETE_NOTIFICATION, // hub → installation: purge this server's data
     SERVER_DELETION_COMPLETE,   // installation → hub: purge finished
     POKE_USER,
-    USER_POKED
+    USER_POKED,
+    BOTS_UPDATED
 }
