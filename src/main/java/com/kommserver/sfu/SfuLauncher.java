@@ -34,8 +34,8 @@ public class SfuLauncher {
     @Value("${sfu.tcp-port}")
     private int tcpPort;
 
-    private static final String LINUX_RESOURCE = "/sfu/livekit_1.10.0_linux_amd64.tar.gz";
-    private static final String WINDOWS_RESOURCE = "/sfu/livekit_1.10.0_windows_amd64.zip";
+    private static final String LINUX_RESOURCE = "/sfu/livekit_1.13.6_linux_amd64.tar.gz";
+    private static final String WINDOWS_RESOURCE = "/sfu/livekit_1.13.6_windows_amd64.zip";
 
     private static final Path WORK_DIR = Path.of("sfu");
 
@@ -148,10 +148,9 @@ public class SfuLauncher {
         String exeName = isWindows ? "livekit-server.exe" : "livekit-server";
         Path dest = WORK_DIR.resolve(exeName);
 
-        if (Files.exists(dest)) {
-            log.debug("[SFU] Binary already present at {}", dest.toAbsolutePath());
-            return dest;
-        }
+        // Always start from a fresh copy — delete any binary left over from a previous
+        // run and re-extract it from the bundled archive. The config YAML is left alone.
+        deleteStaleBinary(dest);
 
         String resource = isWindows ? WINDOWS_RESOURCE : LINUX_RESOURCE;
         try (InputStream in = getClass().getResourceAsStream(resource)) {
@@ -167,6 +166,30 @@ public class SfuLauncher {
 
         log.debug("[SFU] Binary extracted to {}", dest.toAbsolutePath());
         return dest;
+    }
+
+    /**
+     * Remove the previously extracted binary so {@link #extractBinary()} always
+     * re-unpacks a pristine copy from the bundled archive. On Windows a running
+     * server holds a lock on the .exe, so this must run after {@link #killStaleProcess()};
+     * we retry briefly to give the OS time to release the handle.
+     */
+    private void deleteStaleBinary(Path dest) throws IOException, InterruptedException {
+        if (!Files.exists(dest)) return;
+
+        IOException last = null;
+        for (int attempt = 0; attempt < 10; attempt++) {
+            try {
+                Files.delete(dest);
+                log.debug("[SFU] Deleted stale binary {}", dest.toAbsolutePath());
+                return;
+            } catch (IOException e) {
+                last = e;
+                Thread.sleep(200);
+            }
+        }
+        throw new IOException("[SFU] Could not delete stale binary " + dest.toAbsolutePath()
+                + " — is a LiveKit process still holding it?", last);
     }
 
     private void killStaleProcess() {

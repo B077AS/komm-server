@@ -4,6 +4,7 @@ import com.kommserver.model.db.Channel;
 import com.kommserver.model.dto.request.ChannelCreateRequest;
 import com.kommserver.model.dto.request.ChannelUpdateRequest;
 import com.kommserver.model.dto.summary.ChannelSummary;
+import com.kommserver.repository.BotChannelAssignmentRepository;
 import com.kommserver.repository.ChannelRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,7 @@ public class ChannelService {
 
     private final ChannelRepository channelRepository;
     private final MessageService messageService;
+    private final BotChannelAssignmentRepository botChannelAssignmentRepository;
 
     public Map<UUID, ChannelSummary> getServerChannels(UUID serverId) {
         List<Channel> channels = channelRepository.findChannelsByServerId(serverId);
@@ -108,6 +110,7 @@ public class ChannelService {
 
     public void deleteChannel(UUID channelId) {
         messageService.deleteAllInChannel(channelId);
+        botChannelAssignmentRepository.deleteByChannelId(channelId);
         channelRepository.deleteById(channelId);
         log.info("Deleted channel id={}", channelId);
     }

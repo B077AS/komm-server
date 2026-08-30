@@ -2,6 +2,9 @@ package com.kommserver.websocket.handlers;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import com.kommserver.bot.BotBehavior;
+import com.kommserver.bot.BotRegistry;
+import com.kommserver.model.db.Bot;
 import com.kommserver.model.db.Channel;
 import com.kommserver.model.db.Message;
 import com.kommserver.model.db.MessageAttachment;
@@ -11,6 +14,7 @@ import com.kommserver.repository.ChannelRepository;
 import com.kommserver.repository.MessageAttachmentRepository;
 import com.kommserver.repository.PendingChannelAttachmentRepository;
 import com.kommserver.repository.ServerMemberRepository;
+import com.kommserver.service.BotService;
 import com.kommserver.service.MessageService;
 import com.kommserver.service.PermissionService;
 import com.kommserver.websocket.senders.ClientMessageSender;
@@ -49,6 +53,8 @@ public class ChannelMessageSentHandler implements ClientInboundMessageHandler {
     private final PendingChannelAttachmentRepository pendingAttachmentRepository;
     private final ClientMessageSender clientMessageSender;
     private final PermissionService permissionService;
+    private final BotService botService;
+    private final BotRegistry botRegistry;
 
     @Override
     public WsMessageType getType() {
@@ -201,6 +207,27 @@ public class ChannelMessageSentHandler implements ClientInboundMessageHandler {
         } else {
             webrtcRoomsManager.broadcastToChannel(serverId, sent.getChannelId(), msg);
         }
+
+        dispatchToBots(channel, saved);
+    }
+
+    /** Fire-and-forget: bots may block on an external HTTP call, so this never runs on the WS thread. */
+    private void dispatchToBots(Channel channel, Message message) {
+        List<Bot> bots = botService.getEnabledBotsForChannel(channel.getChannelId());
+        if (bots.isEmpty()) return;
+
+        Thread.ofVirtual().start(() -> {
+            for (Bot bot : bots) {
+                BotBehavior behavior = botRegistry.get(bot.getBotType());
+                if (behavior == null) continue;
+                try {
+                    behavior.onMessage(channel, message, bot);
+                } catch (Exception e) {
+                    log.warn("Bot id={} type={} failed on message in channelId={}: {}",
+                            bot.getBotId(), bot.getBotType(), channel.getChannelId(), e.getMessage());
+                }
+            }
+        });
     }
 
     private boolean isImageType(String fileType) {

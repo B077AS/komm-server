@@ -34,7 +34,8 @@ public enum Permission {
     USE_SOUNDBOARD,
     MANAGE_SERVER_SOUNDBOARD,
     MOVE_MEMBERS,
-    VIEW_CHANNEL;
+    VIEW_CHANNEL,
+    MANAGE_BOTS;
 
     public static boolean containedIn(List<String> permissions, Permission p) {
         return permissions != null && permissions.contains(p.name());
