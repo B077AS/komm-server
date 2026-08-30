@@ -163,6 +163,7 @@ public class ChannelJoinHandler implements ClientInboundMessageHandler {
                 .payload(gson.toJsonTree(VoiceTokenPayload.builder()
                         .livekitUrl(liveKitTokenService.getLiveKitUrl())
                         .token(liveKitTokenService.issueToken(serverId, channelId, userId))
+                        .channelId(channelId)
                         .build()).getAsJsonObject())
                 .build();
 
