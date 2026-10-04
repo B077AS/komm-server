@@ -120,6 +120,25 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- Maven stamps the built jar's own version in here so AppVersionProvider can report it
+                 to the hub - everything else in resources is left unfiltered (Spring's own ${...}
+                 placeholders in application.properties must not be touched by Maven filtering). -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>version.properties</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>version.properties</exclude>
+                </excludes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
