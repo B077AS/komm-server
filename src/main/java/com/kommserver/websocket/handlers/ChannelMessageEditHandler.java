@@ -63,6 +63,12 @@ public class ChannelMessageEditHandler implements ClientInboundMessageHandler {
             return;
         }
 
+        if (message.getMessageType() == Message.MessageType.POLL) {
+            // Changing the question/options after people voted would make the results meaningless.
+            log.warn("CHANNEL_MESSAGE_EDIT denied: polls cannot be edited (userId={}, messageId={})", userId, edit.getMessageId());
+            return;
+        }
+
         if (edit.getContent().isBlank() && !Boolean.TRUE.equals(message.getHasAttachments())) {
             log.warn("CHANNEL_MESSAGE_EDIT denied: blank content on non-attachment message (userId={})", userId);
             return;

@@ -21,4 +21,6 @@ public class MessageSentPayload {
     private UUID attachmentId;
     private Message.MessageType messageType;
     private String codeLanguage;
+    /** Required when {@code messageType == POLL}; {@code content} is then the question. */
+    private PollCreatePayload poll;
 }

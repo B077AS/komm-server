@@ -11,6 +11,9 @@ public enum WsMessageType {
     CHANNEL_MESSAGE_EDITED,
     CHANNEL_MESSAGE_REACTION_ADD,
     CHANNEL_MESSAGE_REACTION_REMOVE,
+    CHANNEL_POLL_VOTE,          // client → installation: replace my choices on a poll
+    CHANNEL_POLL_CLOSE,         // client → installation: author/moderator ends a poll
+    CHANNEL_POLL_UPDATED,       // installation → clients: current poll state
     CHANNEL_TYPING_INDICATOR,
     CHANNEL_JOIN,
     CHANNEL_LEAVE,

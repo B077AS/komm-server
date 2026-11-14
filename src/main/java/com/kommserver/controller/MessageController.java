@@ -61,7 +61,7 @@ public class MessageController {
                     ? LocalDateTime.parse(before)
                     : LocalDateTime.now().plusSeconds(1);
 
-            List<MessageReceivedPayload> messages = messageService.getMessagesBefore(channelId, cursor, limit);
+            List<MessageReceivedPayload> messages = messageService.getMessagesBefore(channelId, cursor, limit, userId);
             return ResponseEntity.ok(messages);
 
         } catch (Exception e) {

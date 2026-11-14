@@ -17,6 +17,8 @@ import com.kommserver.repository.ServerMemberRepository;
 import com.kommserver.service.BotService;
 import com.kommserver.service.MessageService;
 import com.kommserver.service.PermissionService;
+import com.kommserver.service.PollService;
+import com.kommserver.websocket.messages.payloads.PollSummary;
 import com.kommserver.websocket.senders.ClientMessageSender;
 import com.kommserver.websocket.managers.ClientSessionManager;
 import com.kommserver.websocket.managers.WebrtcRoomsManager;
@@ -55,6 +57,7 @@ public class ChannelMessageSentHandler implements ClientInboundMessageHandler {
     private final PermissionService permissionService;
     private final BotService botService;
     private final BotRegistry botRegistry;
+    private final PollService pollService;
 
     @Override
     public WsMessageType getType() {
@@ -110,8 +113,23 @@ public class ChannelMessageSentHandler implements ClientInboundMessageHandler {
             return;
         }
 
-        Message saved = messageService.save(userId, serverId, sent);
+        boolean isPoll = sent.getMessageType() == Message.MessageType.POLL;
+        List<String> pollOptions = null;
+        if (isPoll) {
+            pollOptions = pollService.validate(userId, sent);
+            if (pollOptions == null) return;
+        }
+
+        Message saved = isPoll
+                ? pollService.createPollMessage(userId, serverId, sent, pollOptions)
+                : messageService.save(userId, serverId, sent);
         log.info("Saved message ID: {}", saved.getMessageId());
+
+        PollSummary pollSummary = null;
+        if (isPoll) {
+            pollSummary = pollService.summaries(List.of(saved.getMessageId()), null).get(saved.getMessageId());
+            if (pollSummary != null) pollSummary.setMyOptionIds(List.of()); // brand new: nobody has voted
+        }
 
         // ── Resolve pending attachment ─────────────────────────────────────────
         String persistedFile64 = null;
@@ -195,6 +213,7 @@ public class ChannelMessageSentHandler implements ClientInboundMessageHandler {
                 .fileType(persistedFileType)
                 .fileSize(persistedFileSize)
                 .file64(persistedFile64)
+                .poll(pollSummary)
                 .build();
 
         WsMessage msg = WsMessage.builder()

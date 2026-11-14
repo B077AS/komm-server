@@ -37,4 +37,6 @@ public class MessageReceivedPayload {
     private boolean replyToHasAttachments;
     private String replyToFileName;
     private String replyToFileType;
+    /** Set when {@code messageType == POLL}. */
+    private PollSummary poll;
 }

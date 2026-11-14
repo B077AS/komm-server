@@ -53,6 +53,7 @@ public class ServerDeletionService {
     private final MessageRepository messageRepository;
     private final MessageAttachmentRepository messageAttachmentRepository;
     private final MessageReactionRepository messageReactionRepository;
+    private final PollService pollService;
 
     private final PermissionService permissionService;
     private final WebrtcRoomsManager webrtcRoomsManager;
@@ -117,6 +118,7 @@ public class ServerDeletionService {
                     .forEach(a -> deleteFile(a.getFilePath()));
             messageAttachmentRepository.deleteByMessageIdIn(chunk);
             messageReactionRepository.deleteByMessageIdIn(chunk);
+            pollService.deleteForMessages(chunk);
         }
         messageRepository.deleteByServerId(serverId);
 
