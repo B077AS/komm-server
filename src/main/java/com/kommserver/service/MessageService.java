@@ -14,6 +14,7 @@ import com.kommserver.repository.PendingChannelAttachmentRepository;
 import com.kommserver.websocket.messages.payloads.ChannelMessageReactionAdd;
 import com.kommserver.websocket.messages.payloads.MessageReceivedPayload;
 import com.kommserver.websocket.messages.payloads.MessageSentPayload;
+import com.kommserver.websocket.messages.payloads.PollSummary;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,6 +46,7 @@ public class MessageService {
     private final MessageReactionRepository messageReactionRepository;
     private final PendingChannelAttachmentRepository pendingAttachmentRepository;
     private final ChannelReadRepository channelReadRepository;
+    private final PollService pollService;
 
     @Value("${komm.attachments.base-path}")
     private String attachmentsBasePath;
@@ -78,7 +80,8 @@ public class MessageService {
         return messageRepository.findById(messageId);
     }
 
-    public List<MessageReceivedPayload> getMessagesBefore(UUID channelId, LocalDateTime cursor, int limit) {
+    /** {@code viewerId} is the requesting user: poll summaries carry their own choices. */
+    public List<MessageReceivedPayload> getMessagesBefore(UUID channelId, LocalDateTime cursor, int limit, UUID viewerId) {
         List<Message> messages = messageRepository.findByChannelIdBeforeCursor(
                 channelId, cursor, PageRequest.of(0, limit));
 
@@ -99,11 +102,20 @@ public class MessageService {
                 .stream()
                 .collect(Collectors.groupingBy(MessageAttachment::getMessageId));
 
+        List<UUID> pollIds = messages.stream()
+                .filter(m -> m.getMessageType() == Message.MessageType.POLL)
+                .map(Message::getMessageId)
+                .toList();
+        Map<UUID, PollSummary> polls = pollService.summaries(pollIds, viewerId);
+
         return messages.stream()
-                .map(m -> toPayload(
-                        withReactions.getOrDefault(m.getMessageId(), m),
-                        attachmentsByMessage.getOrDefault(m.getMessageId(), Collections.emptyList())
-                ))
+                .map(m -> {
+                    MessageReceivedPayload p = toPayload(
+                            withReactions.getOrDefault(m.getMessageId(), m),
+                            attachmentsByMessage.getOrDefault(m.getMessageId(), Collections.emptyList()));
+                    p.setPoll(polls.get(m.getMessageId()));
+                    return p;
+                })
                 .toList();
     }
 
@@ -306,6 +318,7 @@ public class MessageService {
 
         messageReactionRepository.deleteByMessageIdIn(messageIds);
         messageAttachmentRepository.deleteByMessageIdIn(messageIds);
+        pollService.deleteForMessages(messageIds);
         messageRepository.deleteByChannelId(channelId);
         log.info("Deleted {} messages ({} attachments) for channelId={}", messageIds.size(), attachments.size(), channelId);
     }

@@ -12,6 +12,7 @@ import com.kommserver.repository.MessageAttachmentRepository;
 import com.kommserver.repository.MessageRepository;
 import com.kommserver.repository.ServerMemberRepository;
 import com.kommserver.service.PermissionService;
+import com.kommserver.service.PollService;
 import com.kommserver.websocket.senders.ClientMessageSender;
 import com.kommserver.websocket.managers.ClientSessionManager;
 import com.kommserver.websocket.managers.WebrtcRoomsManager;
@@ -45,6 +46,7 @@ public class ChannelMessageDeleteHandler implements ClientInboundMessageHandler 
     private final WebrtcRoomsManager webrtcRoomsManager;
     private final ClientMessageSender clientMessageSender;
     private final PermissionService permissionService;
+    private final PollService pollService;
 
     @Override
     public WsMessageType getType() {
@@ -100,6 +102,9 @@ public class ChannelMessageDeleteHandler implements ClientInboundMessageHandler 
 
         // Delete attachments from disk and DB before deleting the message
         deleteAttachments(delete.getMessageId());
+        if (message.getMessageType() == Message.MessageType.POLL) {
+            pollService.deleteForMessages(List.of(delete.getMessageId()));
+        }
 
         messageRepository.deleteById(delete.getMessageId());
 
