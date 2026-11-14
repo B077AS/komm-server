@@ -26,7 +26,7 @@ The platform has three pieces - you choose how many to run:
 
 | Piece | Role | Who runs it |
 |---|---|---|
-| [komm](https://github.com/B077AS/komm) (+ [komm-launcher](https://github.com/B077AS/komm-launcher)) | Desktop client for Windows & Linux, kept up to date by the launcher | Everyone |
+| [komm](https://github.com/B077AS/komm) | Desktop client for Windows & Linux, plus the launcher that installs and updates it (same repo) | Everyone |
 | **komm-server** (this repo) | A community's own server: channels, messages, voice rooms, permissions. One JAR, embedded database | Community owners |
 | [komm-hub](https://github.com/B077AS/komm-hub) | The network's directory: accounts, friends, DMs, and the CA that vouches for servers | Almost nobody - most people use [kommvoice.com](https://kommvoice.com) |
 
@@ -215,8 +215,7 @@ Everything ships with working defaults in `src/main/resources/application.proper
 
 | Repo | What it is |
 |---|---|
-| [komm](https://github.com/B077AS/komm) | Desktop client (JavaFX, Windows & Linux) - where you create and manage installations |
-| [komm-launcher](https://github.com/B077AS/komm-launcher) | Auto-updating launcher for the desktop client - Windows installer & Linux AppImage |
+| [komm](https://github.com/B077AS/komm) | Desktop client (JavaFX, Windows & Linux) - where you create and manage installations - and its auto-updating launcher (Windows installer & Linux AppImage) |
 | komm-server | This repo - self-hosted community server (single JAR, embedded database) |
 | [komm-server-launcher](https://github.com/B077AS/komm-server-launcher) | Installs, updates, and runs komm-server as an OS service |
 | [komm-hub](https://github.com/B077AS/komm-hub) | Accounts, friends & DMs, server directory, CA, and the kommvoice.com website |
