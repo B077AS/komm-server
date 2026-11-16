@@ -1,5 +1,6 @@
 package com.kommserver.websocket.handlers;
 
+import com.kommserver.config.DataDir;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.kommserver.model.db.Channel;
@@ -140,7 +141,7 @@ public class ChannelMessageDeleteHandler implements ClientInboundMessageHandler 
         for (MessageAttachment attachment : attachments) {
             if (attachment.getFilePath() != null) {
                 try {
-                    Path path = Paths.get(attachment.getFilePath());
+                    Path path = DataDir.resolve(attachment.getFilePath());
                     boolean deleted = Files.deleteIfExists(path);
                     if (deleted) {
                         log.info("Deleted attachment file: {}", path);

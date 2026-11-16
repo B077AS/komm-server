@@ -41,3 +41,4 @@ build/
 /CLAUDE.md
 /setup-token.txt
 /installation-ports.properties
+/pg-runtime/

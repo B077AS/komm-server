@@ -39,8 +39,8 @@ public class TlsEnvironmentPostProcessor implements EnvironmentPostProcessor, Or
             return;
         }
 
-        Path cert = Path.of(environment.getProperty("komm.tls.cert-file", "keys/tls-cert.pem"));
-        Path key = Path.of(environment.getProperty("jwt.keys.private", "keys/komm-private.pem"));
+        Path cert = DataDir.resolve(environment.getProperty("komm.tls.cert-file", "keys/tls-cert.pem"));
+        Path key = DataDir.resolve(environment.getProperty("jwt.keys.private", "keys/komm-private.pem"));
         if (!Files.isReadable(cert) || !Files.isReadable(key)) {
             return; // not activated yet — plain HTTP until the certificate exists
         }

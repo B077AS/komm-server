@@ -1,5 +1,6 @@
 package com.kommserver.service;
 
+import com.kommserver.config.DataDir;
 import com.kommserver.model.db.ServerSoundboard;
 import com.kommserver.model.dto.response.ErrorResponse;
 import com.kommserver.model.dto.summary.SoundboardSummary;
@@ -87,10 +88,10 @@ public class SoundboardService {
         entityManager.flush();
         entityManager.clear();
 
-        Path dir = Paths.get(soundboardsBasePath, serverId.toString());
-        Files.createDirectories(dir);
+        Path dir = Paths.get(soundboardsBasePath, serverId.toString()); // stored relative to the data folder
+        Files.createDirectories(DataDir.resolve(dir));
         Path filePath = dir.resolve(id + ext);
-        Files.write(filePath, bytes);
+        Files.write(DataDir.resolve(filePath), bytes);
 
         ServerSoundboard sb = ServerSoundboard.builder()
                 .serverId(serverId).slotIndex(slotIndex).name(resolvedName).emoji(resolvedEmoji)
@@ -144,10 +145,10 @@ public class SoundboardService {
         entityManager.flush();
         entityManager.clear();
 
-        Path dir = Paths.get(soundboardsBasePath, serverId.toString());
-        Files.createDirectories(dir);
+        Path dir = Paths.get(soundboardsBasePath, serverId.toString()); // stored relative to the data folder
+        Files.createDirectories(DataDir.resolve(dir));
         Path filePath = dir.resolve(id + ext);
-        Files.write(filePath, bytes);
+        Files.write(DataDir.resolve(filePath), bytes);
 
         ServerSoundboard sb = ServerSoundboard.builder()
                 .serverId(serverId).slotIndex(existing.getSlotIndex())
@@ -173,7 +174,7 @@ public class SoundboardService {
         Details d = find(serverId, soundboardId).orElse(null);
         if (d == null) return ErrorResponse.of(HttpStatus.NOT_FOUND, "Soundboard not found");
 
-        Path filePath = Paths.get(d.filePath());
+        Path filePath = DataDir.resolve(d.filePath());
         if (!Files.exists(filePath) || !Files.isReadable(filePath)) {
             log.error("[Soundboard] File missing or unreadable: {}", filePath);
             return ErrorResponse.of(HttpStatus.INTERNAL_SERVER_ERROR, "Soundboard file unavailable");
@@ -193,7 +194,7 @@ public class SoundboardService {
     }
 
     private void deleteFile(String path) {
-        try { Files.deleteIfExists(Paths.get(path)); }
+        try { Files.deleteIfExists(DataDir.resolve(path)); }
         catch (IOException e) { log.warn("[Soundboard] Could not delete file: {}", e.getMessage()); }
     }
 }

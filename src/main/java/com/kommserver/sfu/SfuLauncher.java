@@ -37,7 +37,7 @@ public class SfuLauncher {
     private static final String LINUX_RESOURCE = "/sfu/livekit_1.13.6_linux_amd64.tar.gz";
     private static final String WINDOWS_RESOURCE = "/sfu/livekit_1.13.6_windows_amd64.zip";
 
-    private static final Path WORK_DIR = Path.of("sfu");
+    private static final Path WORK_DIR = com.kommserver.config.DataDir.resolve("sfu");
 
     private volatile Process livekitProcess;
     private volatile String apiKey;
