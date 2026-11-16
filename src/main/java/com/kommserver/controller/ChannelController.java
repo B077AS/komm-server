@@ -115,6 +115,25 @@ public class ChannelController {
         }
     }
 
+    /** Ids of every server member who can view the channel; feeds the client's @mention suggestions. */
+    @GetMapping("/{channelId}/viewers")
+    public ResponseEntity<?> getChannelViewers(@PathVariable UUID channelId) {
+        try {
+            UUID serverId = securityUtil.getCurrentServerId();
+            UUID userId = securityUtil.getCurrentUserId();
+            if (channelService.getChannelById(serverId, channelId).isEmpty()) {
+                return ErrorResponse.of(HttpStatus.NOT_FOUND, "Channel not found");
+            }
+            if (!permissionService.hasInChannel(userId, serverId, channelId, Permission.VIEW_CHANNEL)) {
+                return ErrorResponse.of(HttpStatus.FORBIDDEN, "Missing permission: VIEW_CHANNEL");
+            }
+            return ResponseEntity.ok(permissionService.getChannelViewerIds(serverId, channelId));
+        } catch (Exception e) {
+            log.error("Failed to retrieve viewers of channel {}: {}", channelId, e.getMessage(), e);
+            return ErrorResponse.of(HttpStatus.INTERNAL_SERVER_ERROR, "Error: " + e.getMessage());
+        }
+    }
+
     @PutMapping("/reorder")
     public ResponseEntity<?> reorderChannels(@RequestBody List<UUID> channelIds) {
         try {

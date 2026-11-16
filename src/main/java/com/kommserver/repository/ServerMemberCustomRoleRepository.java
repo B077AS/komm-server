@@ -16,6 +16,8 @@ public interface ServerMemberCustomRoleRepository
 
     List<ServerMemberCustomRole> findByUserIdAndServerId(UUID userId, UUID serverId);
 
+    List<ServerMemberCustomRole> findByServerId(UUID serverId);
+
     void deleteByRoleId(UUID roleId);
 
     @Modifying

@@ -390,6 +390,59 @@ public class PermissionService {
         return effective;
     }
 
+    /**
+     * Every member of the server who has VIEW_CHANNEL on the channel (feeds the client's @mention
+     * suggestions). Same rules as {@link #effectiveChannelPermissions} — VIEW_CHANNEL starts
+     * allowed for every role, then base-role, custom-role and user overrides apply in that order —
+     * but evaluated for all members from a few bulk queries instead of several per member.
+     */
+    @Transactional(readOnly = true)
+    public List<UUID> getChannelViewerIds(UUID serverId, UUID channelId) {
+        String view = Permission.VIEW_CHANNEL.name();
+
+        Map<UUID, List<UUID>> memberCustomRoles = new HashMap<>();
+        for (ServerMemberCustomRole mcr : memberCustomRoleRepository.findByServerId(serverId)) {
+            memberCustomRoles.computeIfAbsent(mcr.getUserId(), k -> new ArrayList<>()).add(mcr.getRoleId());
+        }
+        Map<ServerMember.Role, ChannelRolePermission> roleOverrides = new EnumMap<>(ServerMember.Role.class);
+        for (ChannelRolePermission p : channelRolePermissionRepository.findByChannelId(channelId)) {
+            roleOverrides.put(p.getRole(), p);
+        }
+        List<ChannelCustomRolePermission> customOverrides =
+                channelCustomRolePermissionRepository.findByChannelId(channelId);
+        Map<UUID, ChannelUserPermission> userOverrides = new HashMap<>();
+        for (ChannelUserPermission p : channelUserPermissionRepository.findByChannelId(channelId)) {
+            userOverrides.put(p.getUserId(), p);
+        }
+
+        List<UUID> viewers = new ArrayList<>();
+        for (ServerMember m : serverMemberRepository.findByServerId(serverId)) {
+            if (m.getRole() == ServerMember.Role.OWNER) {
+                viewers.add(m.getUserId());
+                continue;
+            }
+            boolean can = true;
+            ChannelRolePermission rp = roleOverrides.get(m.getRole());
+            if (rp != null) can = applyOverride(can, view, rp.getAllowPermissions(), rp.getDenyPermissions());
+            List<UUID> myCustom = memberCustomRoles.getOrDefault(m.getUserId(), List.of());
+            for (ChannelCustomRolePermission cp : customOverrides) {
+                if (myCustom.contains(cp.getCustomRoleId())) {
+                    can = applyOverride(can, view, cp.getAllowPermissions(), cp.getDenyPermissions());
+                }
+            }
+            ChannelUserPermission up = userOverrides.get(m.getUserId());
+            if (up != null) can = applyOverride(can, view, up.getAllowPermissions(), up.getDenyPermissions());
+            if (can) viewers.add(m.getUserId());
+        }
+        return viewers;
+    }
+
+    private static boolean applyOverride(boolean current, String perm, List<String> allow, List<String> deny) {
+        if (deny != null && deny.contains(perm)) current = false;
+        if (allow != null && allow.contains(perm)) current = true;
+        return current;
+    }
+
     public boolean has(UUID userId, UUID serverId, Permission permission) {
         return effectiveServerPermissions(userId, serverId).contains(permission.name());
     }
