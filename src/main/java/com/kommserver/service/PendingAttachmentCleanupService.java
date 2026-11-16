@@ -1,5 +1,6 @@
 package com.kommserver.service;
 
+import com.kommserver.config.DataDir;
 import com.kommserver.model.db.PendingChannelAttachment;
 import com.kommserver.repository.PendingChannelAttachmentRepository;
 import lombok.RequiredArgsConstructor;
@@ -34,7 +35,7 @@ public class PendingAttachmentCleanupService {
         for (PendingChannelAttachment pending : stale) {
             try {
                 if (pending.getFilePath() != null) {
-                    Files.deleteIfExists(Paths.get(pending.getFilePath()));
+                    Files.deleteIfExists(DataDir.resolve(pending.getFilePath()));
                 }
                 pendingAttachmentRepository.delete(pending);
                 deleted++;

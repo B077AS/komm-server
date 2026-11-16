@@ -1,5 +1,6 @@
 package com.kommserver.security;
 
+import com.kommserver.config.DataDir;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,7 +43,7 @@ public class TlsMaterialService {
     public boolean ensureCertificateFile(String certificatePem) {
         if (certificatePem == null || certificatePem.isBlank()) return false;
         try {
-            Path path = Path.of(certFile);
+            Path path = DataDir.resolve(certFile);
             if (Files.exists(path) && certificatePem.equals(Files.readString(path))) {
                 return false;
             }

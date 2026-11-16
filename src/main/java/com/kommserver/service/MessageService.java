@@ -1,5 +1,6 @@
 package com.kommserver.service;
 
+import com.kommserver.config.DataDir;
 import com.kommserver.model.db.ChannelRead;
 import com.kommserver.model.db.Message;
 import com.kommserver.model.db.MessageAttachment;
@@ -58,10 +59,11 @@ public class MessageService {
         String extension = FilenameUtils.getExtension(originalFileName);
         String diskFileName = UUID.randomUUID() + (extension.isBlank() ? "" : "." + extension);
 
-        Path dir = Paths.get(attachmentsBasePath, channelId.toString());
-        Files.createDirectories(dir);
-        Path filePath = dir.resolve(diskFileName);
-        Files.write(filePath, fileBytes);
+        // Stored relative to the data folder (as it always was), so the folder can move.
+        Path filePath = Paths.get(attachmentsBasePath, channelId.toString()).resolve(diskFileName);
+        Path onDisk = DataDir.resolve(filePath);
+        Files.createDirectories(onDisk.getParent());
+        Files.write(onDisk, fileBytes);
 
         PendingChannelAttachment saved = pendingAttachmentRepository.save(PendingChannelAttachment.builder()
                 .channelId(channelId)
@@ -265,7 +267,7 @@ public class MessageService {
         }
 
         MessageAttachment attachment = attachments.get(0);
-        Path filePath = Paths.get(attachment.getFilePath());
+        Path filePath = DataDir.resolve(attachment.getFilePath());
 
         if (!Files.exists(filePath) || !Files.isReadable(filePath)) {
             log.error("Attachment file missing or unreadable: {}", filePath);
@@ -309,7 +311,7 @@ public class MessageService {
         for (MessageAttachment att : attachments) {
             if (att.getFilePath() != null) {
                 try {
-                    Files.deleteIfExists(Paths.get(att.getFilePath()));
+                    Files.deleteIfExists(DataDir.resolve(att.getFilePath()));
                 } catch (IOException e) {
                     log.warn("Could not delete attachment file {}: {}", att.getFilePath(), e.getMessage());
                 }
@@ -329,7 +331,7 @@ public class MessageService {
 
     private String readFileAsBase64(String storedFilePath) {
         try {
-            Path filePath = Paths.get(storedFilePath);
+            Path filePath = DataDir.resolve(storedFilePath);
             if (Files.exists(filePath) && Files.isReadable(filePath)) {
                 byte[] fileBytes = Files.readAllBytes(filePath);
                 return Base64.getEncoder().encodeToString(fileBytes);

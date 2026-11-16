@@ -1,0 +1,40 @@
+{
+  "name": "komm-server",
+  "executable": "komm-server",
+
+  "mainClass": "org.springframework.boot.loader.launch.JarLauncher",
+
+  "updateUrl": "https://github.com/B077AS/komm-server/releases/latest/download",
+  "policy": "manual",
+
+  "start": "app",
+  "systemJava": true,
+  "console": true,
+
+  "archive": false,
+  "appImage": false,
+  "rawParts": ["app", "launcher"],
+
+  "jvmArgs": [
+    "-Dkomm.data-dir=${home}/data"
+  ],
+
+  "branding": {
+    "icon": "src/jpack/icon.ico",
+    "description": "komm-server",
+    "company": "Komm",
+    "product": "komm-server"
+  },
+
+  "launcher": {
+    "jar": "launcher/target/komm-server-launcher.jar",
+    "mainClass": "com.kommserver.launcher.Launcher",
+    "console": true,
+    "jvmArgs": [
+      "-XX:+UseSerialGC",
+      "-Xmx96m",
+      "-XX:TieredStopAtLevel=1",
+      "--enable-native-access=ALL-UNNAMED"
+    ]
+  }
+}

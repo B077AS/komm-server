@@ -16,11 +16,15 @@ public class EmbeddedPostgresConfiguration {
     @Bean
     public DataSource dataSource() throws IOException {
 
-        File dataDir = new File("komm-postgres-data");
+        File dataDir = DataDir.resolve("komm-postgres-data").toFile();
+        // Where the Postgres binaries are unpacked: next to the data, not in /tmp (where a tmp cleaner can remove them
+        // from under a running server, and where they were never part of the installation).
+        File binaries = DataDir.resolve("pg-runtime").toFile();
 
         EmbeddedPostgres postgres = EmbeddedPostgres.builder()
                 //.setPort(0) // Port 0 = automatically find an available port
                 .setPort(5555)
+                .setOverrideWorkingDirectory(binaries)
                 .setDataDirectory(dataDir)
                 .setCleanDataDirectory(false)
                 .setServerConfig("listen_addresses", "localhost")

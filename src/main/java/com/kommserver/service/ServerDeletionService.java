@@ -1,5 +1,6 @@
 package com.kommserver.service;
 
+import com.kommserver.config.DataDir;
 import com.google.gson.Gson;
 import com.kommserver.model.db.Channel;
 import com.kommserver.model.db.Server;
@@ -151,7 +152,7 @@ public class ServerDeletionService {
     private void deleteFile(String path) {
         if (path == null || path.isBlank()) return;
         try {
-            Files.deleteIfExists(Paths.get(path));
+            Files.deleteIfExists(DataDir.resolve(path));
         } catch (Exception e) {
             log.warn("Could not delete file {}: {}", path, e.getMessage());
         }

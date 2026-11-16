@@ -1,5 +1,6 @@
 package com.kommserver.websocket.handlers;
 
+import com.kommserver.config.DataDir;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.kommserver.bot.BotBehavior;
@@ -255,7 +256,7 @@ public class ChannelMessageSentHandler implements ClientInboundMessageHandler {
 
     private String readFileAsBase64(String filePath) {
         try {
-            var path = Paths.get(filePath);
+            var path = DataDir.resolve(filePath);
             if (Files.exists(path) && Files.isReadable(path)) {
                 return Base64.getEncoder().encodeToString(Files.readAllBytes(path));
             }

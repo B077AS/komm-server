@@ -26,7 +26,7 @@ public class PortEnvironmentPostProcessor implements EnvironmentPostProcessor, O
 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
-        Path path = Path.of(environment.getProperty("komm.ports-file", "installation-ports.properties"));
+        Path path = DataDir.resolve(environment.getProperty("komm.ports-file", "installation-ports.properties"));
         if (!Files.isReadable(path)) {
             return;
         }

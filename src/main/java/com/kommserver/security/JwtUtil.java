@@ -1,5 +1,6 @@
 package com.kommserver.security;
 
+import com.kommserver.config.DataDir;
 import com.kommserver.model.db.Installation;
 import com.kommserver.repository.InstallationRepository;
 import io.jsonwebtoken.Claims;
@@ -95,8 +96,8 @@ public class JwtUtil {
     }
 
     private KeyPair loadOrGenerateKeyPair() throws Exception {
-        File privFile = new File(privateKeyFile);
-        File pubFile = new File(publicKeyFile);
+        File privFile = DataDir.resolve(privateKeyFile).toFile();
+        File pubFile = DataDir.resolve(publicKeyFile).toFile();
 
         if (privFile.exists() && pubFile.exists()) {
             log.info("Loading existing EC key pair from {}", keysDirectory);
@@ -110,7 +111,7 @@ public class JwtUtil {
     }
 
     private void saveKeysToFiles(KeyPair keyPair, File privFile, File pubFile) throws IOException {
-        Path dir = Paths.get(keysDirectory);
+        Path dir = DataDir.resolve(keysDirectory);
         if (!Files.exists(dir)) {
             Files.createDirectories(dir);
         }

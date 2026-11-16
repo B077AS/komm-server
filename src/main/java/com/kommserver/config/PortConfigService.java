@@ -36,7 +36,7 @@ public class PortConfigService {
         if (response.getTcpPort() != null) props.setProperty("sfu.tcp-port", String.valueOf(response.getTcpPort()));
         if (response.getMediaPort() != null) props.setProperty("sfu.media-port", String.valueOf(response.getMediaPort()));
 
-        Path path = Path.of(portsFile);
+        Path path = DataDir.resolve(portsFile);
         try {
             if (Files.exists(path) && props.equals(loadExisting(path))) {
                 return false;

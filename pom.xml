@@ -16,6 +16,7 @@
 
     <properties>
         <java.version>21</java.version>
+        <jpack.plugin.version>0.1.3</jpack.plugin.version>
     </properties>
 
     <dependencies>
@@ -111,6 +112,13 @@
             <artifactId>livekit-server</artifactId>
             <version>0.15.1</version>
         </dependency>
+        <!-- Tells the jpack stub the server is up (first start after an update = trial; see JpackSupport).
+             Dependency-free, a few classes. -->
+        <dependency>
+            <groupId>io.github.b077as</groupId>
+            <artifactId>jpack-api</artifactId>
+            <version>${jpack.plugin.version}</version>
+        </dependency>
         <!-- https://mvnrepository.com/artifact/commons-io/commons-io -->
         <dependency>
             <groupId>commons-io</groupId>
@@ -166,5 +174,35 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+            The installable komm-server: mvn -f launcher/pom.xml package, then mvn clean package -Pjpack
+            -> target/jpack/image/<platform>/   the install folder (stub, jpack.json, app/, launcher/); no Java runtime:
+                                                it runs on the machine's Java 21+
+               target/jpack/release/            what an update is served from: upload ALL of it to the GitHub release
+            Settings are in src/jpack/jpack.json. The Linux tarball and the Windows installer wrap the image (see
+            packaging/ and .github/workflows/release.yml).
+        -->
+        <profile>
+            <id>jpack</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>io.github.b077as</groupId>
+                        <artifactId>jpack-maven-plugin</artifactId>
+                        <version>${jpack.plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>package</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>

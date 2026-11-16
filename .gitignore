@@ -32,12 +32,5 @@ build/
 ### VS Code ###
 .vscode/
 
-/keys/
-/komm-postgres-data/
-/logs/
-/sfu/
-/uploads/
-/yt/
+/data/
 /CLAUDE.md
-/setup-token.txt
-/installation-ports.properties

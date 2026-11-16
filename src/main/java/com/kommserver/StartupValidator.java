@@ -1,5 +1,6 @@
 package com.kommserver;
 
+import com.kommserver.config.DataDir;
 import com.kommserver.model.db.Installation;
 import com.kommserver.repository.InstallationRepository;
 import com.kommserver.security.TlsMaterialService;
@@ -96,6 +97,7 @@ public class StartupValidator implements ApplicationRunner {
 
     private void restartToApplyConfiguration() {
         log.info("Restarting to apply the updated TLS/port configuration...");
+        com.kommserver.config.JpackSupport.sayStarted(); // a planned restart, not a version that fails to start
         System.exit(RESTART_REQUESTED_EXIT_CODE);
     }
 
@@ -105,12 +107,11 @@ public class StartupValidator implements ApplicationRunner {
     // client (installation card → "Get Verification Code") and writes it here before the
     // service is ever started.
     private String readSetupTokenFromFile() {
-        Path path = Path.of(setupTokenFile);
+        Path path = DataDir.resolve(setupTokenFile);
         if (!Files.isReadable(path)) {
             throw new IllegalStateException(
-                    "No setup token found at " + path.toAbsolutePath() + ". If you're using " +
-                            "komm-server-launcher, run `kommserver install-service` and paste the " +
-                            "verification code.");
+                    "No setup token found at " + path.toAbsolutePath() + ". Run " +
+                            "`kommserver install-service` and paste the verification code.");
         }
         try {
             String token = Files.readString(path).trim();
@@ -125,7 +126,7 @@ public class StartupValidator implements ApplicationRunner {
 
     private void deleteSetupTokenFile() {
         try {
-            Files.deleteIfExists(Path.of(setupTokenFile));
+            Files.deleteIfExists(DataDir.resolve(setupTokenFile));
         } catch (IOException e) {
             log.warn("Failed to delete setup token file after activation: {}", e.getMessage());
         }
