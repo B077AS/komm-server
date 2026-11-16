@@ -12,8 +12,8 @@ import java.nio.file.Path;
  * <p>
  * Chosen by, first match wins: the {@code KOMM_DATA_DIR} environment variable (a service or container that keeps the
  * data somewhere else), the {@code komm.data-dir} system property (an install made with jpack passes
- * {@code <install folder>/data}), else the working directory (a run from the IDE, and installs from before this setting,
- * which started the jar inside the data folder).
+ * {@code <install folder>/data}), else {@code data} in the working directory (a run from the IDE: the project's
+ * {@code data/} folder).
  * <p>
  * Paths stored in the database (attachments, soundboard sounds) stay relative, as they always were, and are resolved
  * against this folder whenever a file is touched, so the data folder can be moved as a whole.
@@ -54,7 +54,7 @@ public final class DataDir {
     }
 
     static Path locate(String fromEnv, String fromProperty) {
-        String chosen = notBlank(fromEnv) ? fromEnv : notBlank(fromProperty) ? fromProperty : ".";
+        String chosen = notBlank(fromEnv) ? fromEnv : notBlank(fromProperty) ? fromProperty : "data";
         return Path.of(chosen.trim()).toAbsolutePath().normalize();
     }
 
