@@ -27,7 +27,7 @@ The platform has three pieces - you choose how many to run:
 | Piece | Role | Who runs it |
 |---|---|---|
 | [komm](https://github.com/B077AS/komm) | Desktop client for Windows & Linux, plus the launcher that installs and updates it (same repo) | Everyone |
-| **komm-server** (this repo) | A community's own server: channels, messages, voice rooms, permissions. One JAR, embedded database | Community owners |
+| **komm-server** (this repo: the server + its `kommserver` command in [`launcher/`](launcher/)) | A community's own server: channels, messages, voice rooms, permissions. Embedded database, installed as an OS service | Community owners |
 | [komm-hub](https://github.com/B077AS/komm-hub) | The network's directory: accounts, friends, DMs, and the CA that vouches for servers | Almost nobody - most people use [kommvoice.com](https://kommvoice.com) |
 
 This repo is the piece a **community owner** runs. Everything that happens inside your community - every message, every voice packet, every uploaded file - lives here, on your machine. The hub only handles accounts and introductions; **it never sees your community's content.**
@@ -37,7 +37,7 @@ This repo is the piece a **community owner** runs. Everything that happens insid
 You don't clone this repo to host a server - the server jar itself is generic and unconfigured; everything installation-specific is set up from the **Komm desktop client**, not a website:
 
 1. **Create your installation in the [Komm](https://github.com/B077AS/komm) client** - name it, pick your ports, and the client generates a P-384 CSR for it locally. This gets you a one-time verification code, shown on that installation's card (**Get Verification Code**, while it's still unverified).
-2. **Get the server running** - either install it as a proper OS service with [komm-server-launcher](https://github.com/B077AS/komm-server-launcher) (`kommserver install-service` prompts for the verification code and handles everything), or download the plain jar yourself and run `java -jar komm-server.jar`, pasting the code into `setup-token.txt` next to it first. The embedded PostgreSQL database and embedded LiveKit media server mean there is nothing else to install - no database setup, no config files, no reverse proxy.
+2. **Install the server** - run the Windows installer or the Linux `install.sh` from the [latest release](https://github.com/B077AS/komm-server/releases/latest) (see [Running your server](#running-your-server)). It registers komm-server as an OS service and asks for the verification code. Besides Java 21, there is nothing else to install: PostgreSQL and the LiveKit media server are embedded - no database setup, no config files, no reverse proxy.
 3. **It verifies itself** - on first boot the server presents that setup token and its CSR to the hub; the hub's built-in CA signs the certificate and the installation goes **online** over a persistent WebSocket. That certificate is also your server's **TLS identity**: from the next start it serves HTTPS/WSS automatically - no domain name, no certbot, no reverse proxy.
 4. **Invite your people** - share an invite link. Friends connect **directly** to your server; messages and voice never pass through the hub.
 
@@ -80,7 +80,7 @@ You don't clone this repo to host a server - the server jar itself is generic an
 
 1. The client asks the hub for a ticket. The hub verifies membership, checks that your installation is online and its certificate is not revoked, and issues a short-lived (**60 s**) single-purpose JWT ticket.
 2. The client connects **directly** to your server with that ticket. `AuthService` verifies the ticket against the hub's public key (stored locally in the `Installation` table) and `UsedTicketStore` guarantees it can never be replayed.
-3. On success, the server issues **its own** tokens: a 15-minute access token and a 30-day refresh token, signed with an EC key pair the server generates locally in `keys/` on first boot. From this point the hub is out of the loop entirely.
+3. On success, the server issues **its own** tokens: a 15-minute access token and a 30-day refresh token, signed with an EC key pair the server generates locally in `data/keys/` on first boot. From this point the hub is out of the loop entirely.
 
 **Everything in one process:**
 
@@ -89,7 +89,7 @@ You don't clone this repo to host a server - the server jar itself is generic an
 │                                                                         │
 │  Spring Boot (port 8090)          Embedded PostgreSQL (port 5555)       │
 │  REST API · WebSocket events      zero-config, data in                  │
-│  auth · permissions · uploads     komm-postgres-data/                   │
+│  auth · permissions · uploads     data/komm-postgres-data/              │
 │                                                                         │
 │  Embedded LiveKit SFU - extracted & launched for your OS                │
 │  signal 7880 · TCP fallback 7881 · media (UDP) 7882                     │
@@ -128,61 +128,83 @@ Channels have two independent permission layers:
 
 ## Requirements
 
-- **Java 21** - that's it. PostgreSQL is embedded, the LiveKit media server is embedded, and the certificate exchange is automatic.
+- **Java 21 or newer, installed on the machine** - that's it (no Java is bundled; the server uses `JAVA_HOME`, else `java` on the `PATH`). PostgreSQL is embedded, the LiveKit media server is embedded, and the certificate exchange is automatic. On Ubuntu/Debian: `sudo apt install openjdk-21-jre-headless`; on Windows e.g. [Eclipse Temurin 21](https://adoptium.net) with "Set JAVA_HOME" ticked.
 - Reachability: forward/open port **8090** (REST + WebSocket) and the media ports **7880** (signal), **7881** (TCP fallback) and **7882/UDP** (media) if your community connects over the internet.
 
 ## Running your server
 
-**Use [komm-server-launcher](https://github.com/B077AS/komm-server-launcher).** It installs komm-server as a real OS service (Windows Service / systemd) instead of a bare process in a terminal - starts at boot, restarts on crash, updates in place with `kommserver update`, and prompts you for your verification code as part of setup. The installer/tarball are built by this repo's own release workflow (seeded with that release's exact server jar), so grab them from **this repo's** [releases](https://github.com/B077AS/komm-server/releases/latest), not komm-server-launcher's:
+komm-server is installed as a real OS service (a Windows Service, or a systemd unit on Linux): it starts at boot, restarts on crash, and updates in place with one command. Both downloads are on this repo's [latest release](https://github.com/B077AS/komm-server/releases/latest).
 
-**Windows:** download and run `Komm-Server-Setup-<version>.exe` from the [latest release](https://github.com/B077AS/komm-server/releases/latest). It seeds a working, already-running service in one pass, prompting for your verification code as it goes.
+**Windows:** run `Komm-Server-Setup.exe`. It installs into one folder (default `C:\ProgramData\Komm\Server`), asks for your verification code, registers the service and starts it. A Start-menu shortcut and a tray icon give you the `kommserver` command and the service's status.
 
 **Linux:**
 ```bash
-curl -LO https://github.com/B077AS/komm-server/releases/latest/download/komm-server-launcher-linux-amd64.tar.gz
-tar xzf komm-server-launcher-linux-amd64.tar.gz
-cd komm-server-launcher-linux
-sudo ./install.sh
+curl -LO https://github.com/B077AS/komm-server/releases/latest/download/komm-server-linux-x64.tar.gz
+tar xzf komm-server-linux-x64.tar.gz
+cd komm-server-linux-x64
+sudo ./install.sh                  # options: --prefix DIR (default /opt/komm-server), --data-dir DIR, --code CODE
+```
+It asks for your verification code, registers the systemd unit and starts the server. Everything lives in the install folder; the only file outside it is the `kommserver` command in `/usr/local/bin`. `sudo ./uninstall.sh` in the install folder removes it again (your data stays unless you add `--purge`).
+
+### The install folder
+
+```
+komm-server(.exe)          the jpack stub: the service runs it, it starts the server
+jpack.json                 what is installed (version, parts)
+app/  launcher/            the server jar and the kommserver command - replaced by updates
+data/                      everything the server writes - back this up
+  komm-postgres-data/      the embedded PostgreSQL data: your messages live here
+  keys/                    the server's EC key pair and its hub-issued TLS certificate (tls-cert.pem)
+  uploads/                 file attachments and soundboard audio
+  logs/                    rolling logs (10 MB per file, 30-day retention, 1 GB cap)
+  sfu/  pg-runtime/        the LiveKit and PostgreSQL programs, unpacked again at every start
 ```
 
-Then, on either platform, if the installer didn't already leave you with a running service:
+The data folder can live elsewhere: `install.sh --data-dir` on Linux, or the `KOMM_DATA_DIR` environment variable.
+
+### The `kommserver` command
+
 ```
-kommserver update            # downloads the latest komm-server jar
-kommserver install-service   # registers the OS service (prompts for your verification code)
-kommserver start
-kommserver status
+kommserver status              is it running, which version, where are the files
+kommserver update              download the newest release and restart the server on it
+kommserver start | stop | restart
+kommserver logs [-f]           the server log (-f keeps following it)
+kommserver install-service     register the OS service again (safe to repeat)
+kommserver uninstall-service   remove the service (files and data stay)
 ```
+On Linux, `start`, `stop`, `update` and `install-service` need `sudo`; on Windows, a Command Prompt opened as Administrator.
 
-### Running the bare jar instead
+### Updates
 
-If you'd rather not run komm-server as a managed OS service, download the plain `komm-server-<version>.jar` from the same [releases](https://github.com/B077AS/komm-server/releases) page, drop your verification code from the Komm client into a `setup-token.txt` next to it, and:
+`kommserver update` is the whole update. Installs are built with [jpack](https://github.com/B077AS/jpack): it reads this repo's latest release, downloads only the parts that changed (usually just the server jar), verifies each by SHA-256, stops the server, swaps the new files in, starts it again and waits until it answers. If the new version fails at its first start, the previous one is put back automatically. Your data folder is never touched.
 
-```bash
-java -jar komm-server.jar
-```
+### Running the jar directly
 
-On first run the server creates, next to the JAR:
-
-| Directory | Contents |
-|---|---|
-| `komm-postgres-data/` | The embedded PostgreSQL data - **your messages live here, back it up** |
-| `keys/` | The server's EC key pair (signs client sessions) and its hub-issued TLS certificate (`tls-cert.pem`) |
-| `uploads/` | File attachments and soundboard audio |
-| `logs/` | Rolling logs (10 MB per file, 30-day retention, 1 GB cap) |
+For development or a quick test you can also run the plain `komm-server.jar` from the release yourself (`java -jar komm-server.jar`, Java 21+). It keeps everything in a `data/` folder in the directory you start it from; put your verification code into `data/setup-token.txt` first. A jar run this way is not a service and does not update itself.
 
 ## Building from source (developers)
 
 ```bash
-# Build
+# Build the server jar
 mvn clean package -DskipTests
 
-# Run
+# Run (writes everything into ./data/)
 mvn spring-boot:run
+
+# The kommserver command (separate Maven project in launcher/)
+mvn -f launcher/pom.xml clean package
+
+# The installable folder + update files (needs the launcher jar above)
+mvn clean package -DskipTests -Pjpack
+# -> target/jpack/image/<platform>/   the install folder (stub, jpack.json, app/, launcher/)
+#    target/jpack/release/            the files updates are served from
 ```
 
-Note that a source build has no setup token baked in - a real one is generated when you create an installation in the [Komm](https://github.com/B077AS/komm) client and is supplied at runtime via `setup-token.txt` (see `komm.setup-token.file` below), never baked into the jar. To develop end-to-end, run a local [komm-hub](https://github.com/B077AS/komm-hub) (default `http://localhost:8085`, matching `api.url` / `websocket.url` in `application.properties`) and create an installation against it from the client.
+Note that a source build has no setup token baked in - a real one is generated when you create an installation in the [Komm](https://github.com/B077AS/komm) client and is supplied at runtime via `data/setup-token.txt` (see `komm.setup-token.file` below), never baked into the jar. To develop end-to-end, run a local [komm-hub](https://github.com/B077AS/komm-hub) (default `http://localhost:8085`, matching `api.url` / `websocket.url` in `application.properties`) and create an installation against it from the client.
 
-**Official releases** are built automatically by GitHub Actions (`.github/workflows/release.yml`) whenever a release is published: the project version is stamped from the release tag, the hub URLs are switched from the localhost development defaults to the production hub at `kommvoice.com`, and the resulting `komm-server-<version>.jar` is attached to the release - along with the Windows installer and Linux tarball, built in parallel jobs that check out [komm-server-launcher](https://github.com/B077AS/komm-server-launcher)'s latest release and seed its packaging scripts with this exact jar.
+The install settings (no bundled Java, the server as the start entry, the `kommserver` command as a console entry, `-Dkomm.data-dir=<install>/data`) are in [`src/jpack/jpack.json`](src/jpack/jpack.json); the installers are in [`packaging/`](packaging/) (`install.sh` / `uninstall.sh` for Linux, an Inno Setup script for Windows).
+
+**Official releases** are built automatically by GitHub Actions (`.github/workflows/release.yml`) whenever a release is published: the project version is stamped from the release tag, the hub URLs are switched from the localhost development defaults to the production hub at `kommvoice.com`, and the server and launcher jars are built once. A Linux and a Windows job then package those same jars with jpack and attach to the release every update file (the manifest `jpack-<platform>.json` last), `komm-server-linux-x64.tar.gz`, `Komm-Server-Setup.exe` and the plain `komm-server.jar`. Download names carry no version, so `releases/latest/download/...` links never change.
 
 ### Configuration at a glance
 
@@ -195,6 +217,7 @@ Everything ships with working defaults in `src/main/resources/application.proper
 | `api.url` / `websocket.url` | `localhost:8085` | The hub this server registers with |
 | `jwt.access-token.expiration` | `900` (15 min) | Client access-token lifetime (seconds) |
 | `jwt.refresh-token.expiration` | `2592000` (30 days) | Refresh-token lifetime (seconds) |
+| `komm.data-dir` (or env `KOMM_DATA_DIR`) | `./data` | The data folder; every file path below is relative to it. Installs set it to `<install>/data` |
 | `komm.tls.cert-file` | `keys/tls-cert.pem` | Hub-issued TLS certificate; when present the server boots in HTTPS/WSS mode (delete to fall back to plain HTTP) |
 | `komm.attachments.base-path` / `komm.soundboards.base-path` | `uploads/…` | Upload storage |
 | `spring.servlet.multipart.max-file-size` | `50MB` | Attachment size limit |
@@ -216,21 +239,20 @@ Everything ships with working defaults in `src/main/resources/application.proper
 | Repo | What it is |
 |---|---|
 | [komm](https://github.com/B077AS/komm) | Desktop client (JavaFX, Windows & Linux) - where you create and manage installations - and its auto-updating launcher (Windows installer & Linux AppImage) |
-| komm-server | This repo - self-hosted community server (single JAR, embedded database) |
-| [komm-server-launcher](https://github.com/B077AS/komm-server-launcher) | Installs, updates, and runs komm-server as an OS service |
+| komm-server | This repo - self-hosted community server (embedded database) and its `kommserver` command - Windows installer & Linux tarball |
 | [komm-hub](https://github.com/B077AS/komm-hub) | Accounts, friends & DMs, server directory, CA, and the kommvoice.com website |
 
 ## FAQ
 
-**Do I need to know anything about databases or WebRTC to host a server?** No. The database and the media server are embedded - create the installation in the Komm client, get the jar running (ideally via komm-server-launcher), done.
+**Do I need to know anything about databases or WebRTC to host a server?** No. The database and the media server are embedded - create the installation in the Komm client, run the installer, done.
 
 **Can the hub read my community's messages?** No. Clients connect directly to your server after a one-time ticket exchange; messages, voice and files never pass through the hub.
 
 **Is traffic to my server encrypted?** Yes. Your server serves HTTPS/WSS with a certificate the hub CA signs automatically at setup - clients verify it belongs to exactly your installation. No domain or certificate purchase needed. Voice audio is additionally encrypted by WebRTC (SRTP).
 
-**Can I move my server to another machine?** Yes - move the JAR together with `komm-postgres-data/`, `keys/` and `uploads/`, and start it again.
+**Can I move my server to another machine?** Yes - stop it, and on the new machine copy `komm-postgres-data/`, `keys/` and `uploads/` into the data folder the install will use (e.g. `/opt/komm-server/data/`, or `C:\ProgramData\Komm\Server\data\`) *before* installing. The installer then finds the certificate, doesn't ask for a code, and starts your server with all its data.
 
-**How do updates work?** [komm-server-launcher](https://github.com/B077AS/komm-server-launcher)'s `kommserver update` checks GitHub for the latest release and swaps it in for you (your data directories are untouched). Without it, download the new JAR yourself and replace the old one.
+**How do updates work?** Run `kommserver update`: it downloads only what changed, restarts the server on the new version, and puts the old one back if the new one fails to start. Your data folder is never touched. See [Updates](#updates).
 
 ## License
 
