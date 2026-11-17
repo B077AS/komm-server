@@ -19,4 +19,9 @@ public class VoiceTokenPayload {
      * superseded joins when the user rapidly clicks between several voice channels.
      */
     private UUID channelId;
+    /**
+     * True when the call is end-to-end encrypted: every member encrypts its media with
+     * SFrame and exchanges keys via E2EE_ANNOUNCE / E2EE_KEY. Older clients ignore it.
+     */
+    private boolean e2ee;
 }
