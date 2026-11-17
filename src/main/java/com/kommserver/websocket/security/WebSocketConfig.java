@@ -1,5 +1,6 @@
 package com.kommserver.websocket.security;
 
+import com.kommserver.sfu.LiveKitSignalProxy;
 import com.kommserver.websocket.managers.ClientSessionManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -22,11 +23,18 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     private final ClientSessionManager clientSessionManager;
     private final AuthHandshakeInterceptor authHandshakeInterceptor;
+    private final LiveKitSignalProxy liveKitSignalProxy;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(clientSessionManager, "/ws")
                 .addInterceptors(authHandshakeInterceptor)
+                .setAllowedOrigins("*");
+
+        // LiveKit signaling, relayed to the loopback-only SFU. No app auth here: the
+        // LiveKit join token in the query string is the credential, checked by LiveKit.
+        registry.addHandler(liveKitSignalProxy, LiveKitSignalProxy.PATH)
+                .addInterceptors(liveKitSignalProxy)
                 .setAllowedOrigins("*");
     }
 
@@ -34,6 +42,9 @@ public class WebSocketConfig implements WebSocketConfigurer {
     public ServletServerContainerFactoryBean createWebSocketContainer() {
         ServletServerContainerFactoryBean container = new ServletServerContainerFactoryBean();
         container.setMaxTextMessageBufferSize(100 * 1024 * 1024); // 100 MB — base64 overhead makes a 50 MB file ~67 MB
+        // LiveKit signaling is binary protobuf; SDP offers with several video codecs, and
+        // join responses in busy rooms, outgrow Tomcat's 8 KB default.
+        container.setMaxBinaryMessageBufferSize(1024 * 1024);
         return container;
     }
 }

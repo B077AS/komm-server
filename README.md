@@ -92,7 +92,7 @@ You don't clone this repo to host a server - the server jar itself is generic an
 │  auth · permissions · uploads     data/komm-postgres-data/              │
 │                                                                         │
 │  Embedded LiveKit SFU - extracted & launched for your OS                │
-│  signal 7880 · TCP fallback 7881 · media (UDP) 7882                     │
+│  signal 127.0.0.1:7880 (via /rtc on 8090) · TCP 7881 · UDP 7882         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -129,7 +129,7 @@ Channels have two independent permission layers:
 ## Requirements
 
 - **Java 21 or newer, installed on the machine** - that's it (no Java is bundled; the server uses `JAVA_HOME`, else `java` on the `PATH`). PostgreSQL is embedded, the LiveKit media server is embedded, and the certificate exchange is automatic. On Ubuntu/Debian: `sudo apt install openjdk-21-jre-headless`; on Windows e.g. [Eclipse Temurin 21](https://adoptium.net) with "Set JAVA_HOME" ticked.
-- Reachability: forward/open port **8090** (REST + WebSocket) and the media ports **7880** (signal), **7881** (TCP fallback) and **7882/UDP** (media) if your community connects over the internet.
+- Reachability: forward/open port **8090** (REST, WebSocket and LiveKit signaling at `/rtc`) and the media ports **7881** (TCP fallback) and **7882/UDP** (media) if your community connects over the internet. LiveKit's own signal port (7880) listens on loopback only and must not be opened: it has no TLS, so clients reach it through the server's TLS proxy.
 
 ## Running your server
 
@@ -213,7 +213,7 @@ Everything ships with working defaults in `src/main/resources/application.proper
 | Property | Default | Purpose |
 |---|---|---|
 | `server.port` | `8090` | REST + WebSocket port |
-| `sfu.signal-port` / `sfu.tcp-port` / `sfu.media-port` | `7880` / `7881` / `7882` | Embedded LiveKit ports |
+| `sfu.signal-port` / `sfu.tcp-port` / `sfu.media-port` | `7880` / `7881` / `7882` | Embedded LiveKit ports. The signal port is loopback-only (a free one is picked if it is taken) and proxied at `/rtc` on `server.port` |
 | `api.url` / `websocket.url` | `localhost:8085` | The hub this server registers with |
 | `jwt.access-token.expiration` | `900` (15 min) | Client access-token lifetime (seconds) |
 | `jwt.refresh-token.expiration` | `2592000` (30 days) | Refresh-token lifetime (seconds) |

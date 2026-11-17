@@ -7,7 +7,6 @@ import io.livekit.server.RoomServiceClient;
 import livekit.LivekitModels;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import retrofit2.Response;
 
@@ -33,14 +32,13 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class LiveKitTokenService {
 
-    @Value("${sfu.signal-port}")
-    private int signalPort;
-
     /**
-     * Token TTL — long enough to survive a session but short enough to rotate.
+     * Token TTL. LiveKit checks the token only when the signal connection is opened —
+     * an established session outlives it, and every channel join mints a new one — so
+     * it only has to cover the gap between CHANNEL_TOKEN and the client's connect.
+     * Kept short so a leaked token is useless almost immediately.
      */
-    private static final long TOKEN_TTL_MS = 6 * 60 * 60 * 1000L; // 6 hours
-    //private static final long TOKEN_TTL_MS = 60 * 2000L; // 1 minute
+    private static final long TOKEN_TTL_MS = 5 * 60 * 1000L; // 5 minutes
 
     private final SfuLauncher sfuLauncher;
 
@@ -62,10 +60,12 @@ public class LiveKitTokenService {
     }
 
     /**
-     * The WebSocket URL clients should open for LiveKit signaling.
+     * Where clients open LiveKit signaling: a path on this server's own API port
+     * (https/wss when TLS is on), proxied to the loopback-only LiveKit by
+     * {@link LiveKitSignalProxy}.
      */
     public String getLiveKitUrl() {
-        return sfuLauncher.getSignalUrl();
+        return LiveKitSignalProxy.PATH;
     }
 
     // ── Room management ───────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ public class LiveKitTokenService {
 
     private RoomServiceClient buildRoomClient() {
         return RoomServiceClient.createClient(
-                "http://localhost:"+signalPort,
+                sfuLauncher.getInternalBaseUrl(),
                 sfuLauncher.getApiKey(),
                 sfuLauncher.getApiSecret()
         );
