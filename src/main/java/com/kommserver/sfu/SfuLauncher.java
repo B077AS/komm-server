@@ -18,8 +18,8 @@ import java.util.HexFormat;
  * The JVM shutdown hook ensures the child process is always killed cleanly.
  * <p>
  * Binary resources expected in src/main/resources/sfu/:
- * livekit_1.10.0_linux_amd64.tar.gz   (contains: livekit-server)
- * livekit_1.10.0_windows_amd64.zip    (contains: livekit-server.exe)
+ * livekit_1.13.11_linux_amd64.tar.gz   (contains: livekit-server)
+ * livekit_1.13.11_windows_amd64.zip    (contains: livekit-server.exe)
  */
 @Slf4j
 @Component
@@ -34,10 +34,13 @@ public class SfuLauncher {
     @Value("${sfu.tcp-port}")
     private int tcpPort;
 
-    private static final String LINUX_RESOURCE = "/sfu/livekit_1.13.6_linux_amd64.tar.gz";
-    private static final String WINDOWS_RESOURCE = "/sfu/livekit_1.13.6_windows_amd64.zip";
+    private static final String LINUX_RESOURCE = "/sfu/livekit_1.13.11_linux_amd64.tar.gz";
+    private static final String WINDOWS_RESOURCE = "/sfu/livekit_1.13.11_windows_amd64.zip";
 
     private static final Path WORK_DIR = com.kommserver.config.DataDir.resolve("sfu");
+
+    /** Loopback port LiveKit's HTTP/WebSocket listener actually bound (see {@link #resolveSignalPort()}). */
+    private volatile int activeSignalPort;
 
     private volatile Process livekitProcess;
     private volatile String apiKey;
@@ -61,6 +64,9 @@ public class SfuLauncher {
             // Kill any leftover process from a previous JVM run (e.g. crashed without cleanup)
             killStaleProcess();
 
+            // Before apiKey: ensureStarted() keys off apiKey, so the port must be set first.
+            activeSignalPort = resolveSignalPort();
+
             // Generate a fresh random key pair on every boot — no need to persist,
             // tokens are minted on demand by LiveKitTokenService using the same values.
             apiKey = "kommkey-" + randomHex(8);
@@ -78,8 +84,8 @@ public class SfuLauncher {
             pb.redirectOutput(ProcessBuilder.Redirect.PIPE);
 
             livekitProcess = pb.start();
-            log.info("[SFU] LiveKit started — pid={} signal=:{} udp=:{} tcp=:{}",
-                    livekitProcess.pid(), signalPort, mediaPort, tcpPort);
+            log.info("[SFU] LiveKit started — pid={} signal=127.0.0.1:{} udp=:{} tcp=:{}",
+                    livekitProcess.pid(), activeSignalPort, mediaPort, tcpPort);
 
             // Pipe LiveKit stdout → our logger in a daemon thread
             Thread logThread = new Thread(this::pipeOutput, "livekit-log");
@@ -135,10 +141,35 @@ public class SfuLauncher {
     }
 
     /**
-     * The WebSocket URL clients should connect to for media.
+     * Loopback base URL of LiveKit's HTTP/WebSocket listener ({@code http://127.0.0.1:<port>}).
+     * Only this process can reach it: clients go through {@link LiveKitSignalProxy} on the
+     * API port (TLS when available), the RoomService API is called from here directly.
+     * {@code 127.0.0.1}, not {@code localhost}: LiveKit binds IPv4 loopback only and
+     * {@code localhost} may resolve to {@code ::1} first.
      */
-    public String getSignalUrl() {
-        return "ws://localhost:" + signalPort;
+    public String getInternalBaseUrl() {
+        ensureStarted();
+        return "http://127.0.0.1:" + activeSignalPort;
+    }
+
+    /**
+     * {@code sfu.signal-port} if it is set and free on loopback, otherwise any free port.
+     * The port is internal now, so nobody needs to know it in advance; installations
+     * created without one (port 0 from the hub) or a second installation on the same
+     * machine just get an ephemeral port.
+     */
+    private int resolveSignalPort() throws IOException {
+        java.net.InetAddress loopback = java.net.InetAddress.getByName("127.0.0.1");
+        if (signalPort > 0) {
+            try (java.net.ServerSocket probe = new java.net.ServerSocket(signalPort, 1, loopback)) {
+                return probe.getLocalPort();
+            } catch (IOException busy) {
+                log.warn("[SFU] Signal port {} is in use — picking a free loopback port", signalPort);
+            }
+        }
+        try (java.net.ServerSocket probe = new java.net.ServerSocket(0, 1, loopback)) {
+            return probe.getLocalPort();
+        }
     }
 
     // ── Binary extraction ─────────────────────────────────────────────────────
@@ -280,8 +311,13 @@ public class SfuLauncher {
         */
 
         Path configPath = WORK_DIR.resolve("livekit.yaml");
+        // bind_addresses only covers the HTTP/WebSocket listener (signaling + RoomService),
+        // not the RTC ports: LiveKit cannot serve TLS there, so it stays on loopback and
+        // clients reach it through LiveKitSignalProxy on the (TLS) API port.
         String yaml = """
         port: %d
+        bind_addresses:
+          - "127.0.0.1"
         log_level: info
         keys:
           %s: "%s"
@@ -299,7 +335,7 @@ public class SfuLauncher {
         audio:
           update_interval: 50
         """.formatted(
-                signalPort,
+                activeSignalPort,
                 apiKey, apiSecret,
                 mediaPort, tcpPort
         );

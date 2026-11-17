@@ -56,7 +56,7 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-crypto</artifactId>
-            <version>7.0.5</version>
+            <version>7.1.2</version>
         </dependency>
         <!-- https://mvnrepository.com/artifact/io.zonky.test/embedded-postgres -->
         <dependency>
@@ -104,13 +104,13 @@
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcpkix-jdk18on</artifactId>
-            <version>1.86</version>
+            <version>1.87</version>
         </dependency>
         <!-- https://mvnrepository.com/artifact/io.livekit/livekit-server -->
         <dependency>
             <groupId>io.livekit</groupId>
             <artifactId>livekit-server</artifactId>
-            <version>0.15.1</version>
+            <version>0.17.0</version>
         </dependency>
         <!-- Tells the jpack stub the server is up (first start after an update = trial; see JpackSupport).
              Dependency-free, a few classes. -->

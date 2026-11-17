@@ -32,7 +32,11 @@ public class PortConfigService {
         }
         Properties props = new Properties();
         props.setProperty("server.port", String.valueOf(response.getPort()));
-        if (response.getSignalPort() != null) props.setProperty("sfu.signal-port", String.valueOf(response.getSignalPort()));
+        // LiveKit's signal port is loopback-only now and no longer chosen in the client
+        // (newer installations report 0); SfuLauncher falls back to a free port if needed.
+        if (response.getSignalPort() != null && response.getSignalPort() > 0) {
+            props.setProperty("sfu.signal-port", String.valueOf(response.getSignalPort()));
+        }
         if (response.getTcpPort() != null) props.setProperty("sfu.tcp-port", String.valueOf(response.getTcpPort()));
         if (response.getMediaPort() != null) props.setProperty("sfu.media-port", String.valueOf(response.getMediaPort()));
 
