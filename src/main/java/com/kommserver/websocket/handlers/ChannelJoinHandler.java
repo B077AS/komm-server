@@ -26,6 +26,7 @@ import com.kommserver.websocket.messages.payloads.UserScreenSharePayload;
 import com.kommserver.websocket.messages.payloads.VoiceTokenPayload;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -45,6 +46,10 @@ public class ChannelJoinHandler implements ClientInboundMessageHandler {
     private final ChannelRepository channelRepository;
     private final ServerMemberRepository serverMemberRepository;
     private final PermissionService permissionService;
+
+    /** Announced in CHANNEL_TOKEN; see komm.voice.e2ee in application.properties. */
+    @Value("${komm.voice.e2ee:true}")
+    private boolean voiceE2ee;
 
     @Override
     public WsMessageType getType() {
@@ -164,6 +169,7 @@ public class ChannelJoinHandler implements ClientInboundMessageHandler {
                         .livekitUrl(liveKitTokenService.getLiveKitUrl())
                         .token(liveKitTokenService.issueToken(serverId, channelId, userId))
                         .channelId(channelId)
+                        .e2ee(voiceE2ee)
                         .build()).getAsJsonObject())
                 .build();
 

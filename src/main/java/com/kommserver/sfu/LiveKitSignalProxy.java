@@ -9,6 +9,8 @@ import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.BinaryMessage;
 import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.PingMessage;
+import org.springframework.web.socket.PongMessage;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.WebSocketSession;
@@ -30,6 +32,9 @@ import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -48,6 +53,14 @@ import java.util.concurrent.TimeoutException;
  * ({@link #beforeHandshake}), so LiveKit's own rejection (401 for a bad or expired
  * token, …) reaches the client as the HTTP status of its upgrade request — the same
  * thing it saw when it talked to LiveKit directly.
+ * <p>
+ * Keepalive: LiveKit pings its socket every 10 s, but that socket now ends at this proxy
+ * (on loopback), so those pings never reach the client. Without traffic, an idle signal
+ * connection over the internet gets silently dropped by NAT routers/firewalls — neither
+ * end notices, and the client stops receiving refresh tokens, speaker updates and
+ * participant changes. The proxy therefore pings the client itself every
+ * {@link #CLIENT_PING_INTERVAL} and, when nothing (pong or frame) has come back for
+ * {@link #CLIENT_DEAD_AFTER}, closes both sides so the client and LiveKit both see it.
  */
 @Slf4j
 @Component
@@ -63,6 +76,18 @@ public class LiveKitSignalProxy extends AbstractWebSocketHandler implements Hand
     private static final Duration ATTACH_TIMEOUT = Duration.ofSeconds(15);
     private static final int CLIENT_SEND_TIME_LIMIT_MS = 10_000;
     private static final int CLIENT_SEND_BUFFER_LIMIT = 4 * 1024 * 1024;
+    /** Like LiveKit's own ping cadence — well under any NAT idle timeout. */
+    private static final Duration CLIENT_PING_INTERVAL = Duration.ofSeconds(15);
+    /** Three missed pings: the client (or the path to it) is gone. */
+    private static final Duration CLIENT_DEAD_AFTER = Duration.ofSeconds(45);
+    private static final CloseStatus KEEPALIVE_TIMEOUT = CloseStatus.GOING_AWAY.withReason("keepalive timeout");
+
+    /** Only checks timestamps and hands sends off to virtual threads, so one thread serves all sessions. */
+    private static final ScheduledExecutorService KEEPALIVE = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "livekit-proxy-keepalive");
+        t.setDaemon(true);
+        return t;
+    });
 
     private final SfuLauncher sfuLauncher;
 
@@ -143,13 +168,23 @@ public class LiveKitSignalProxy extends AbstractWebSocketHandler implements Hand
     @Override
     protected void handleBinaryMessage(WebSocketSession session, BinaryMessage message) {
         Upstream upstream = upstream(session);
-        if (upstream != null) upstream.sendBinary(message.getPayload());
+        if (upstream == null) return;
+        upstream.markAlive();
+        upstream.sendBinary(message.getPayload());
     }
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
         Upstream upstream = upstream(session);
-        if (upstream != null) upstream.sendText(message.getPayload());
+        if (upstream == null) return;
+        upstream.markAlive();
+        upstream.sendText(message.getPayload());
+    }
+
+    @Override
+    protected void handlePongMessage(WebSocketSession session, PongMessage message) {
+        Upstream upstream = upstream(session);
+        if (upstream != null) upstream.markAlive();
     }
 
     @Override
@@ -208,6 +243,10 @@ public class LiveKitSignalProxy extends AbstractWebSocketHandler implements Hand
         private final ByteArrayOutputStream binaryParts = new ByteArrayOutputStream();
         private final StringBuilder textParts = new StringBuilder();
 
+        /** Last time anything (pong or frame) arrived from the client. */
+        private volatile long lastClientActivityNanos = System.nanoTime();
+        private ScheduledFuture<?> keepalive;            // guarded by lock
+
         // client → LiveKit
 
         void attach(WebSocketSession session) {
@@ -221,6 +260,44 @@ public class LiveKitSignalProxy extends AbstractWebSocketHandler implements Hand
                 while ((frame = pending.poll()) != null) {
                     deliver(session, frame);
                 }
+                markAlive();
+                long period = CLIENT_PING_INTERVAL.toMillis();
+                keepalive = KEEPALIVE.scheduleAtFixedRate(this::keepaliveTick, period, period, TimeUnit.MILLISECONDS);
+            }
+        }
+
+        void markAlive() {
+            lastClientActivityNanos = System.nanoTime();
+        }
+
+        private void keepaliveTick() {
+            WebSocketSession session;
+            synchronized (lock) {
+                if (closed || client == null) return;
+                session = client;
+            }
+            long silentMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - lastClientActivityNanos);
+            if (silentMs >= CLIENT_DEAD_AFTER.toMillis()) {
+                log.info("[SFU] Signal client {} silent for {} s — closing its LiveKit connection",
+                        session.getRemoteAddress(), silentMs / 1000);
+                Thread.startVirtualThread(() -> failClient(KEEPALIVE_TIMEOUT)); // the close frame can block too
+                return;
+            }
+            // A send can block (full socket buffer towards a dead peer); never on this shared thread.
+            Thread.startVirtualThread(() -> {
+                try {
+                    session.sendMessage(new PingMessage());
+                } catch (Exception e) {
+                    log.debug("[SFU] Ping to signal client failed: {}", e.toString());
+                }
+            });
+        }
+
+        /** Must be called with {@link #lock} held. */
+        private void stopKeepalive() {
+            if (keepalive != null) {
+                keepalive.cancel(false);
+                keepalive = null;
             }
         }
 
@@ -239,6 +316,7 @@ public class LiveKitSignalProxy extends AbstractWebSocketHandler implements Hand
                 if (closed) return;
                 closed = true;
                 pending.clear();
+                stopKeepalive();
                 if (w == null) return;
                 // Forward a real close frame (LiveKit treats it as the client going away),
                 // then drop the socket whether or not LiveKit answers.
@@ -337,6 +415,7 @@ public class LiveKitSignalProxy extends AbstractWebSocketHandler implements Hand
                 if (closed) return;
                 closed = true;
                 pending.clear();
+                stopKeepalive();
                 session = client;
             }
             if (session != null) closeQuietly(session, status);

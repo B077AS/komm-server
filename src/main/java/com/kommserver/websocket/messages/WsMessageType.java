@@ -94,5 +94,9 @@ public enum WsMessageType {
     SERVER_DELETION_COMPLETE,   // installation → hub: purge finished
     POKE_USER,
     USER_POKED,
-    BOTS_UPDATED
+    BOTS_UPDATED,
+    // Voice E2EE key exchange. The installation only relays these: the media keys inside
+    // E2EE_KEY are sealed to the recipient's ephemeral X25519 key and never readable here.
+    E2EE_ANNOUNCE,              // client → installation → every other member of the caller's voice channel
+    E2EE_KEY                    // client → installation → one member of the same voice channel
 }
