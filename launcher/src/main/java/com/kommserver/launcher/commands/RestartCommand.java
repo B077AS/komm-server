@@ -13,6 +13,7 @@ public class RestartCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         try {
+            Install.current().clearActivationStatus();
             ServiceController.create().restart();
         } catch (RuntimeException e) {
             System.out.println(Palette.danger("Restart failed: ") + e.getMessage());

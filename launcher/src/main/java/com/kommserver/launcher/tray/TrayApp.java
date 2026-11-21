@@ -129,13 +129,13 @@ public final class TrayApp {
                 return;
             }
             ServiceStatus status = ServiceController.create().status();
-            if (status.running() == expectRunning) {
+            if (status.isRunning() == expectRunning) {
                 trayIcon.displayMessage("Komm Server",
-                        label + " succeeded — " + (status.running() ? "running" : "stopped") + ".",
+                        label + " succeeded — " + (status.isRunning() ? "running" : "stopped") + ".",
                         TrayIcon.MessageType.INFO);
             } else {
                 trayIcon.displayMessage("Komm Server",
-                        label + " may not have worked — still " + (status.running() ? "running" : "stopped")
+                        label + " may not have worked — still " + (status.isRunning() ? "running" : "stopped")
                                 + ". Try Command Prompt as Administrator: kommserver " + label.toLowerCase(),
                         TrayIcon.MessageType.WARNING);
             }
@@ -144,7 +144,7 @@ public final class TrayApp {
 
     private static void refreshStatus(MenuItem statusItem, TrayIcon trayIcon) {
         ServiceStatus status = ServiceController.create().status();
-        String label = !status.installed() ? "Not installed" : status.running() ? "Running" : "Stopped";
+        String label = !status.isInstalled() ? "Not installed" : status.isRunning() ? "Running" : "Stopped";
         statusItem.setLabel("Status: " + label);
         trayIcon.setToolTip("Komm Server — " + label);
     }
@@ -162,8 +162,8 @@ public final class TrayApp {
             // hit the exact same problem one level down. Fixed by extending PATH for
             // just this spawned session (set PATH=...;{app}) before running anything,
             // so both the scripted command and anything typed afterward resolve.
-            String installDir = Install.current().home().toString();
-            String cmdPath = Install.current().home().resolve("kommserver.cmd").toString();
+            String installDir = Install.current().getHome().toString();
+            String cmdPath = Install.current().getHome().resolve("kommserver.cmd").toString();
             String innerCommand = "set \"PATH=%PATH%;" + installDir + "\" && \"" + cmdPath + "\" " + command;
             new ProcessBuilder("cmd", "/c", "start", "cmd", "/k", innerCommand).start();
         } catch (Exception e) {

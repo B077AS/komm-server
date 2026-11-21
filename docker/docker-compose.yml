@@ -1,0 +1,28 @@
+# komm-server in Docker. Copy this file to the machine that will host it, then:
+#
+#   KOMM_SETUP_TOKEN=<verification code from the Komm client> docker compose up -d     (first start only)
+#   docker compose logs -f                                                              (follow the log)
+#
+# Update:   docker compose pull && docker compose up -d
+# Pin:      image: ghcr.io/b077as/komm-server:0.0.9      (every release has its own tag; :latest follows the newest)
+#
+# Everything the server writes lives in the `komm-data` volume: back it up. Replacing the image never touches it.
+name: komm                          # fixed project name, so the data volume is always `komm_komm-data`
+services:
+  komm:
+    image: ghcr.io/b077as/komm-server:latest
+    container_name: komm-server
+    restart: unless-stopped        # also covers the one planned restart after activation (exit code 75)
+    stop_grace_period: 30s         # time for PostgreSQL and LiveKit to shut down cleanly
+    # Host networking: the ports (REST/WebSocket, 7881 TCP, 7882/UDP) are chosen in the Komm client and applied after the
+    # first start, and LiveKit has to advertise the machine's own addresses. Linux hosts; Docker Desktop needs "Enable
+    # host networking" turned on.
+    network_mode: host
+    environment:
+      # Read only while the server has no installation record (the first start); safe to leave set or remove after.
+      KOMM_SETUP_TOKEN: ${KOMM_SETUP_TOKEN:-}
+    volumes:
+      - komm-data:/data
+
+volumes:
+  komm-data:

@@ -9,26 +9,15 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
-import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.bouncycastle.jce.spec.ECNamedCurveGenParameterSpec;
 import org.bouncycastle.openssl.PEMKeyPair;
 import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter;
-import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
-import org.bouncycastle.operator.ContentSigner;
-import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
-import org.bouncycastle.pkcs.PKCS10CertificationRequest;
-import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.*;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -95,80 +84,11 @@ public class JwtUtil {
         }
     }
 
+    // The key pair is shared with the activation that runs before Spring starts (PreBootActivation), which
+    // generates it on a first start so that the CSR it sends to the hub is signed by the very same key.
     private KeyPair loadOrGenerateKeyPair() throws Exception {
-        File privFile = DataDir.resolve(privateKeyFile).toFile();
-        File pubFile = DataDir.resolve(publicKeyFile).toFile();
-
-        if (privFile.exists() && pubFile.exists()) {
-            log.info("Loading existing EC key pair from {}", keysDirectory);
-            return loadKeysFromFiles(privFile, pubFile);
-        }
-
-        log.info("Generating new EC P-384 key pair and saving to {}", keysDirectory);
-        KeyPair keyPair = generateKeyPair();
-        saveKeysToFiles(keyPair, privFile, pubFile);
-        return keyPair;
-    }
-
-    private void saveKeysToFiles(KeyPair keyPair, File privFile, File pubFile) throws IOException {
-        Path dir = DataDir.resolve(keysDirectory);
-        if (!Files.exists(dir)) {
-            Files.createDirectories(dir);
-        }
-        try (JcaPEMWriter w = new JcaPEMWriter(new FileWriter(privFile))) {
-            w.writeObject(keyPair.getPrivate());
-        }
-        try (JcaPEMWriter w = new JcaPEMWriter(new FileWriter(pubFile))) {
-            w.writeObject(keyPair.getPublic());
-        }
-        log.info("EC P-384 key pair saved to {}", keysDirectory);
-    }
-
-    private KeyPair loadKeysFromFiles(File privFile, File pubFile) throws Exception {
-        JcaPEMKeyConverter converter = new JcaPEMKeyConverter().setProvider("BC");
-
-        PrivateKey privateKey;
-        try (PEMParser parser = new PEMParser(new FileReader(privFile))) {
-            Object obj = parser.readObject();
-            if (obj instanceof PEMKeyPair) {
-                privateKey = converter.getPrivateKey(((PEMKeyPair) obj).getPrivateKeyInfo());
-            } else if (obj instanceof PrivateKeyInfo) {
-                privateKey = converter.getPrivateKey((PrivateKeyInfo) obj);
-            } else {
-                throw new IllegalArgumentException("Unsupported private key format: " + obj.getClass().getName());
-            }
-        }
-
-        PublicKey publicKey;
-        try (PEMParser parser = new PEMParser(new FileReader(pubFile))) {
-            Object obj = parser.readObject();
-            if (obj instanceof SubjectPublicKeyInfo) {
-                publicKey = converter.getPublicKey((SubjectPublicKeyInfo) obj);
-            } else if (obj instanceof PEMKeyPair) {
-                publicKey = converter.getPublicKey(((PEMKeyPair) obj).getPublicKeyInfo());
-            } else {
-                throw new IllegalArgumentException("Unsupported public key format: " + obj.getClass().getName());
-            }
-        }
-
-        return new KeyPair(publicKey, privateKey);
-    }
-
-    public String generateCsrPem(String cn) {
-        try {
-            ContentSigner signer = new JcaContentSignerBuilder("SHA384withECDSA")
-                    .setProvider("BC").build(localPrivateKey);
-            PKCS10CertificationRequest csr = new JcaPKCS10CertificationRequestBuilder(
-                    new X500Name("CN=" + cn), localPublicKey)
-                    .build(signer);
-            StringWriter sw = new StringWriter();
-            try (JcaPEMWriter w = new JcaPEMWriter(sw)) {
-                w.writeObject(csr);
-            }
-            return sw.toString();
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to generate CSR", e);
-        }
+        return InstallationKeys.loadOrGenerate(
+                DataDir.resolve(keysDirectory), DataDir.resolve(privateKeyFile), DataDir.resolve(publicKeyFile));
     }
 
     /**
@@ -255,12 +175,6 @@ public class JwtUtil {
                 return converter.getPublicKey(((PEMKeyPair) obj).getPublicKeyInfo());
             throw new IllegalArgumentException("Unsupported public key format: " + obj.getClass().getName());
         }
-    }
-
-    private KeyPair generateKeyPair() throws Exception {
-        KeyPairGenerator gen = KeyPairGenerator.getInstance("EC", "BC");
-        gen.initialize(new ECNamedCurveGenParameterSpec("P-384"));
-        return gen.generateKeyPair();
     }
 
     public void setHubPublicKeyFromPem(String pem) {

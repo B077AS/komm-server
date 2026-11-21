@@ -1,10 +1,16 @@
 package com.kommserver.sfu;
 
+import com.kommserver.model.db.Installation;
+import com.kommserver.repository.InstallationRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.nio.file.*;
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -23,10 +29,17 @@ import java.util.HexFormat;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class SfuLauncher {
+
+    private final InstallationRepository installationRepository;
 
     @Value("${sfu.signal-port}")
     private int signalPort;
+
+    /** KOMM_NODE_IP: wins over the address the hub gave players (see {@link #resolveNodeIp()}). */
+    @Value("${sfu.node-ip:}")
+    private String nodeIpOverride;
 
     @Value("${sfu.media-port}")
     private int mediaPort;
@@ -43,6 +56,9 @@ public class SfuLauncher {
     private volatile int activeSignalPort;
 
     private volatile Process livekitProcess;
+    /** The address written into LiveKit's config at its last start; null when it advertises its own interfaces. */
+    private volatile String activeNodeIp;
+    private boolean shutdownHookRegistered;
     private volatile String apiKey;
     private volatile String apiSecret;
 
@@ -93,7 +109,10 @@ public class SfuLauncher {
             logThread.start();
 
             // Kill LiveKit when the JVM exits
-            Runtime.getRuntime().addShutdownHook(new Thread(this::stop, "livekit-shutdown"));
+            if (!shutdownHookRegistered) {
+                Runtime.getRuntime().addShutdownHook(new Thread(this::stop, "livekit-shutdown"));
+                shutdownHookRegistered = true;
+            }
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -118,6 +137,24 @@ public class SfuLauncher {
         }
         livekitProcess = null;
         log.info("[SFU] LiveKit stopped.");
+    }
+
+    /**
+     * Re-reads the address to advertise (see {@link #resolveNodeIp()}) and restarts LiveKit if it differs from the one it
+     * was started with. Called when the hub reports the address players use, which is when an IP change shows up.
+     * Does nothing before LiveKit has started: {@link #start()} reads the current address itself.
+     */
+    public synchronized void refreshNodeIp() {
+        if (livekitProcess == null || !livekitProcess.isAlive()) {
+            return;
+        }
+        String wanted = resolveNodeIp();
+        if (java.util.Objects.equals(wanted, activeNodeIp)) {
+            return;
+        }
+        log.info("[SFU] The address to advertise changed ({} -> {}): restarting LiveKit", activeNodeIp, wanted);
+        stop();
+        start();
     }
 
     public boolean isRunning() {
@@ -170,6 +207,48 @@ public class SfuLauncher {
         try (java.net.ServerSocket probe = new java.net.ServerSocket(0, 1, loopback)) {
             return probe.getLocalPort();
         }
+    }
+
+    // ── The address advertised for voice ──────────────────────────────────────
+
+    /**
+     * The IPv4 address LiveKit should tell clients to send voice to, or null to leave it to LiveKit.
+     * <p>
+     * Left alone, LiveKit advertises the addresses of this machine's own network interfaces. That is only right when the
+     * public IP sits on one of them; behind a home router, or on a cloud VM whose public IP is NAT-ed to a private one
+     * (AWS, GCP, Oracle), clients are given an address they cannot reach and voice fails even with the ports open. So
+     * it is told the address players already use for this server: {@code KOMM_NODE_IP} if set, otherwise the one the
+     * hub gave at activation (the owner's public address, else the IP the hub saw the server activate from). A name is
+     * resolved here, at every start, so a dynamic-DNS name follows a changing IP. IPv6 is ignored.
+     * <p>
+     * With an address set, LiveKit advertises only that one (its own interface and STUN candidates are dropped). Players
+     * reach the server's port through the same address already, so nobody loses a route they had.
+     */
+    private String resolveNodeIp() {
+        String source = "KOMM_NODE_IP";
+        String configured = nodeIpOverride == null ? "" : nodeIpOverride.trim();
+        if (configured.isEmpty()) {
+            source = "the hub";
+            configured = installationRepository.findAll().stream()
+                    .findFirst().map(Installation::getPublicAddress).orElse("").trim();
+        }
+        if (configured.isEmpty()) {
+            return null;
+        }
+        try {
+            for (InetAddress address : InetAddress.getAllByName(configured)) {
+                if (address instanceof Inet4Address v4 && !v4.isLoopbackAddress() && !v4.isAnyLocalAddress()
+                        && !v4.isLinkLocalAddress() && !v4.isMulticastAddress()) {
+                    log.debug("[SFU] Voice address {} (from {}: {})", v4.getHostAddress(), source, configured);
+                    return v4.getHostAddress();
+                }
+            }
+            log.warn("[SFU] '{}' (from {}) has no usable IPv4 address; LiveKit keeps this machine's own addresses",
+                    configured, source);
+        } catch (UnknownHostException e) {
+            log.warn("[SFU] Cannot resolve '{}' (from {}); LiveKit keeps this machine's own addresses", configured, source);
+        }
+        return null;
     }
 
     // ── Binary extraction ─────────────────────────────────────────────────────
@@ -311,6 +390,12 @@ public class SfuLauncher {
         */
 
         Path configPath = WORK_DIR.resolve("livekit.yaml");
+        String nodeIp = resolveNodeIp();
+        activeNodeIp = nodeIp;
+        if (nodeIp != null) {
+            log.info("[SFU] Advertising {} for voice media", nodeIp);
+        }
+        String nodeIpLine = nodeIp == null ? "" : "  node_ip: " + nodeIp;
         // bind_addresses only covers the HTTP/WebSocket listener (signaling + RoomService),
         // not the RTC ports: LiveKit cannot serve TLS there, so it stays on loopback and
         // clients reach it through LiveKitSignalProxy on the (TLS) API port.
@@ -324,6 +409,7 @@ public class SfuLauncher {
         rtc:
           udp_port: %d
           tcp_port: %d
+        %s
           use_external_ip: false
           congestion_control:
             enabled: true
@@ -337,7 +423,8 @@ public class SfuLauncher {
         """.formatted(
                 activeSignalPort,
                 apiKey, apiSecret,
-                mediaPort, tcpPort
+                mediaPort, tcpPort,
+                nodeIpLine
         );
         Files.writeString(configPath, yaml, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         log.debug("[SFU] Config written to {}", configPath.toAbsolutePath());

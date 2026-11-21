@@ -40,9 +40,9 @@ public class LinuxServiceController implements ServiceController {
 
                 [Install]
                 WantedBy=multi-user.target
-                """.formatted(install.stub(), install.dataDir(), install.dataDir(), System.getProperty("java.home"));
+                """.formatted(install.getStub(), install.getDataDir(), install.getDataDir(), System.getProperty("java.home"));
         try {
-            Files.createDirectories(install.dataDir());
+            Files.createDirectories(install.getDataDir());
             Files.writeString(UNIT_FILE, unit);
         } catch (IOException e) {
             throw new IllegalStateException("Cannot write " + UNIT_FILE + " (" + e.getMessage() + ") (" + privilegeHint("install-service") + ")");
@@ -79,7 +79,7 @@ public class LinuxServiceController implements ServiceController {
             return ServiceStatus.notInstalled();
         }
         String state = Processes.run("systemctl", "is-active", NAME).output().trim();
-        return new ServiceStatus(true, state.equals("active"), state);
+        return ServiceStatus.builder().installed(true).running(state.equals("active")).detail(state).build();
     }
 
     @Override

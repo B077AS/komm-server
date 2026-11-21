@@ -18,15 +18,12 @@ import java.nio.file.Path;
  * Paths stored in the database (attachments, soundboard sounds) stay relative, as they always were, and are resolved
  * against this folder whenever a file is touched, so the data folder can be moved as a whole.
  */
-public final class DataDir {
+public class DataDir {
 
     public static final String PROPERTY = "komm.data-dir";
     public static final String ENV = "KOMM_DATA_DIR";
 
     private static volatile Path root;
-
-    private DataDir() {
-    }
 
     /** Settles the folder, creates it, and publishes it as the {@code komm.data-dir} system property (the log config reads it). */
     public static Path init() {

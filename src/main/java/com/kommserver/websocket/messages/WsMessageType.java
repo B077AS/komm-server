@@ -2,6 +2,7 @@ package com.kommserver.websocket.messages;
 
 public enum WsMessageType {
     SYNC_RECAP,
+    ADDRESS_UPDATE,             // hub → installation: the address players are given for this server
     CHANNEL_CREATED,
     CHANNEL_MESSAGE_SENT,
     CHANNEL_MESSAGE_RECEIVED,

@@ -30,7 +30,7 @@ public interface ServiceController {
     String privilegeHint(String command);
 
     default void restart() {
-        if (status().running()) {
+        if (status().isRunning()) {
             stop();
         }
         start();

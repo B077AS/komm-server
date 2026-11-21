@@ -53,7 +53,7 @@ public class UpdateCommand implements Callable<Integer> {
             System.out.println(Palette.danger("Updates need the installed `kommserver` command (it runs through jpack)."));
             return 1;
         }
-        Path marker = install.home().resolve(MARKER);
+        Path marker = install.getHome().resolve(MARKER);
         try (Jpack jpack = Jpack.connect()) {
             if (Files.exists(marker)) {
                 return finish(install, marker);
@@ -91,7 +91,7 @@ public class UpdateCommand implements Callable<Integer> {
 
         ServiceController service = ServiceController.create();
         ServiceStatus status = service.status();
-        if (status.running() && !yes && !Terminal.confirm("komm-server is running: it restarts once the update is downloaded. Go on?")) {
+        if (status.isRunning() && !yes && !Terminal.confirm("komm-server is running: it restarts once the update is downloaded. Go on?")) {
             System.out.println(Palette.muted("Nothing downloaded."));
             return 0;
         }
@@ -118,7 +118,7 @@ public class UpdateCommand implements Callable<Integer> {
         }
         System.out.println(Palette.success("✓") + " downloaded " + Palette.cyan(update.version()));
 
-        boolean restart = status.running();
+        boolean restart = status.isRunning();
         if (restart) {
             System.out.println(Palette.muted("Stopping komm-server..."));
             try {
@@ -162,7 +162,7 @@ public class UpdateCommand implements Callable<Integer> {
         }
         String wanted = props.getProperty("version", "?");
         boolean restart = Boolean.parseBoolean(props.getProperty("restart", "false"));
-        boolean installed = wanted.equals(install.version());
+        boolean installed = wanted.equals(install.getVersion());
         if (installed) {
             System.out.println(Palette.success("✓") + " installed " + Palette.cyan(wanted));
         } else {

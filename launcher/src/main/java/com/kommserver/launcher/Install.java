@@ -1,5 +1,9 @@
 package com.kommserver.launcher;
 
+import lombok.Builder;
+import lombok.Getter;
+import lombok.ToString;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -22,7 +26,19 @@ import java.util.regex.Pattern;
  *
  * The data folder can live elsewhere: {@code KOMM_DATA_DIR} (set by the {@code kommserver} wrapper and the service).
  */
-public record Install(Path home, Path stub, Path dataDir, String version) {
+@Getter
+@Builder
+@ToString
+public class Install {
+
+    /** The install folder. */
+    private final Path home;
+    /** The jpack stub that starts the server (and this tool). */
+    private final Path stub;
+    /** Everything the server writes. */
+    private final Path dataDir;
+    /** The version the stub started us as; {@link #versionOnDisk()} is the one in {@code jpack.json} right now. */
+    private final String version;
 
     /** The installation this tool was started from, by the jpack stub. */
     public static Install current() {
@@ -37,7 +53,12 @@ public record Install(Path home, Path stub, Path dataDir, String version) {
         String dataEnv = System.getenv("KOMM_DATA_DIR");
         Path data = dataEnv != null && !dataEnv.isBlank() ? Path.of(dataEnv.trim()).toAbsolutePath().normalize() : homeDir.resolve("data");
         String version = System.getenv("JPACK_VERSION");
-        return new Install(homeDir, stub, data, version == null ? "unknown" : version);
+        return Install.builder()
+                .home(homeDir)
+                .stub(stub)
+                .dataDir(data)
+                .version(version == null ? "unknown" : version)
+                .build();
     }
 
     /**
@@ -90,5 +111,59 @@ public record Install(Path home, Path stub, Path dataDir, String version) {
 
     public Path serverLog() {
         return dataDir.resolve("logs").resolve("komm.log");
+    }
+
+    /**
+     * What a server that cannot finish its activation says in {@code activation.status}: the hub rejected the verification
+     * code ({@code rejected}), or could not be reached ({@code unreachable}). {@code code} is the hub's machine-readable
+     * reason, when it sent one.
+     */
+    @Getter
+    @Builder
+    @ToString
+    public static class ActivationStatus {
+
+        private final String state;
+        private final String code;
+        private final String message;
+
+        public boolean rejected() {
+            return "rejected".equals(state);
+        }
+    }
+
+    /** A waiting server rewrites its status every few seconds; one that was not touched for this long is a dead server's. */
+    private static final long STATUS_FRESH_MS = 20_000;
+
+    /** What the running server says about its activation right now, or null when it is not waiting (or the file is stale). */
+    public ActivationStatus activationStatus() {
+        Path file = dataDir.resolve("activation.status");
+        if (!Files.isReadable(file)) {
+            return null;
+        }
+        Properties props = new Properties();
+        try (InputStream in = Files.newInputStream(file)) {
+            props.load(in);
+            long updated = Long.parseLong(props.getProperty("updated", "0").trim());
+            if (System.currentTimeMillis() - updated > STATUS_FRESH_MS) {
+                return null;
+            }
+            return ActivationStatus.builder()
+                    .state(props.getProperty("state", ""))
+                    .code(props.getProperty("code"))
+                    .message(props.getProperty("message"))
+                    .build();
+        } catch (IOException | NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** Forgets what an earlier run said, before starting the server, so that only its own word counts. */
+    public void clearActivationStatus() {
+        try {
+            Files.deleteIfExists(dataDir.resolve("activation.status"));
+        } catch (IOException e) {
+            // best effort: a stale file is also ignored once it is older than STATUS_FRESH_MS
+        }
     }
 }
