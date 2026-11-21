@@ -1,10 +1,12 @@
 package com.kommserver;
 
+import com.kommserver.bootstrap.PreBootActivation;
 import com.kommserver.config.DataDir;
 import com.kommserver.model.db.Installation;
+import com.kommserver.model.dto.response.InstallationValidationResponse;
 import com.kommserver.repository.InstallationRepository;
+import com.kommserver.security.JwtUtil;
 import com.kommserver.security.TlsMaterialService;
-import com.kommserver.service.ActivationService;
 import com.kommserver.sfu.SfuLauncher;
 import com.kommserver.websocket.HubConnector;
 import lombok.RequiredArgsConstructor;
@@ -15,9 +17,6 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 
 @Slf4j
@@ -27,8 +26,8 @@ public class StartupValidator implements ApplicationRunner {
 
     private final HubConnector hubConnector;
     private final InstallationRepository installationRepository;
-    private final ActivationService activationService;
-    private final SfuLauncher sfuLauncher;   // ← new
+    private final JwtUtil jwtUtil;
+    private final SfuLauncher sfuLauncher;
     private final TlsMaterialService tlsMaterialService;
 
     @Value("${server.port}")
@@ -47,20 +46,25 @@ public class StartupValidator implements ApplicationRunner {
                             " installation records, expected at most 1.");
         }
 
+        boolean restartNeeded = false;
+
         if (installations.isEmpty()) {
-            log.info("No installation found, triggering setup flow...");
-            String setupToken = readSetupTokenFromFile();
-            if (activationService.activateInstallation(setupToken)) {
-                deleteSetupTokenFile();
-                // TLS material and any hub-chosen ports were just written to disk by
-                // activateInstallation() — this boot already bound to plain HTTP and
-                // the default ports before either existed, so it can't pick them up
-                // itself. Restart now rather than serve this boot in the wrong mode:
-                // that's the whole point of running under a supervised OS service
-                // (Restart=always / WinSW onfailure) instead of a bare `java -jar`.
-                restartToApplyConfiguration();
+            // A new installation was activated with the hub before this context started (PreBootActivation), so the
+            // certificate and the ports were already in place when Tomcat was configured. All that is left is to
+            // record who we are.
+            InstallationValidationResponse activation = PreBootActivation.readPending();
+            if (activation == null) {
+                throw new IllegalStateException(
+                        "This server is not activated and was given no verification code. Put the code from the "
+                                + "Komm client in " + DataDir.resolve(setupTokenFile).toAbsolutePath()
+                                + " (`kommserver install-service` does that) or set "
+                                + PreBootActivation.SETUP_TOKEN_ENV + ", then start it again.");
             }
-            return;
+            restartNeeded = recordActivation(activation);
+            installations = installationRepository.findAll();
+        } else {
+            // Nothing left to import (an earlier boot recorded it, then stopped before removing the file).
+            PreBootActivation.clearPending();
         }
 
         // Exactly 1 record — validate it
@@ -77,7 +81,8 @@ public class StartupValidator implements ApplicationRunner {
 
         // Upgrades from pre-TLS builds: the certificate exists only in the DB — put it
         // on disk so the next boot serves HTTPS (see TlsEnvironmentPostProcessor).
-        if (tlsMaterialService.ensureCertificateFile(installation.getCertificate())) {
+        restartNeeded |= tlsMaterialService.ensureCertificateFile(installation.getCertificate());
+        if (restartNeeded) {
             restartToApplyConfiguration();
             return;
         }
@@ -89,46 +94,41 @@ public class StartupValidator implements ApplicationRunner {
 
     // ─────────────────────────────────────────────────────────────────────────
 
+    /**
+     * Turns the hub's answer into the installation record.
+     *
+     * @return true when the certificate or the ports had to be put back on disk now, which only happens if they were
+     *         lost between the activation and this boot: this boot did not have them, so it has to restart once
+     */
+    private boolean recordActivation(InstallationValidationResponse activation) {
+        installationRepository.save(Installation.builder()
+                .installationId(activation.getInstallationId())
+                .installationName(activation.getInstallationName())
+                .certificate(activation.getCertificate())
+                .hubPublicKey(activation.getHubPublicKey())
+                .ownerId(activation.getOwnerId())
+                .publicAddress(activation.getPublicAddress())
+                .build());
+        jwtUtil.setHubPublicKeyFromPem(activation.getHubPublicKey());
+
+        boolean certWritten = tlsMaterialService.ensureCertificateFile(activation.getCertificate());
+        boolean portsWritten = PreBootActivation.writePorts(activation);
+        PreBootActivation.clearPending();
+        log.info("Installation '{}' recorded", activation.getInstallationName());
+        return certWritten || portsWritten;
+    }
+
     // Non-zero and distinctive on purpose: systemd's Restart=always restarts on any
     // exit code, but WinSW's <onfailure> only fires on a non-zero one — this needs to
     // trigger a restart under both, so a plain System.exit(0) wouldn't reliably work
-    // on Windows.
+    // on Windows. Only reached now when the TLS certificate or the ports have to be
+    // put on disk after the fact (an upgrade from a pre-TLS build, or files lost after
+    // activation); a normal activation no longer restarts.
     private static final int RESTART_REQUESTED_EXIT_CODE = 75;
 
     private void restartToApplyConfiguration() {
         log.info("Restarting to apply the updated TLS/port configuration...");
         com.kommserver.config.JpackSupport.sayStarted(); // a planned restart, not a version that fails to start
         System.exit(RESTART_REQUESTED_EXIT_CODE);
-    }
-
-    // The server jar is now a generic, unmodified build (see komm-server-launcher) — it
-    // no longer carries a per-installation setup token in its own manifest. The launcher's
-    // `kommserver install-service` prompts for the verification code shown in the Komm
-    // client (installation card → "Get Verification Code") and writes it here before the
-    // service is ever started.
-    private String readSetupTokenFromFile() {
-        Path path = DataDir.resolve(setupTokenFile);
-        if (!Files.isReadable(path)) {
-            throw new IllegalStateException(
-                    "No setup token found at " + path.toAbsolutePath() + ". Run " +
-                            "`kommserver install-service` and paste the verification code.");
-        }
-        try {
-            String token = Files.readString(path).trim();
-            if (token.isEmpty()) {
-                throw new IllegalStateException("Setup token file " + path.toAbsolutePath() + " is empty");
-            }
-            return token;
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to read setup token file: " + path.toAbsolutePath(), e);
-        }
-    }
-
-    private void deleteSetupTokenFile() {
-        try {
-            Files.deleteIfExists(DataDir.resolve(setupTokenFile));
-        } catch (IOException e) {
-            log.warn("Failed to delete setup token file after activation: {}", e.getMessage());
-        }
     }
 }

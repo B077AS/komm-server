@@ -30,4 +30,11 @@ public class Installation {
 
     @Column(name = "owner_id", nullable = false, length = 36)
     private UUID ownerId;
+
+    /**
+     * The address the hub gave players for this server at activation (a name or an IP). The media server advertises it
+     * for voice. Null for installations activated before this was sent, and with an older hub.
+     */
+    @Column(name = "public_address")
+    private String publicAddress;
 }

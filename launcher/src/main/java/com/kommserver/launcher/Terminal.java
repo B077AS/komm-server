@@ -74,18 +74,25 @@ public final class Terminal {
     }
 
     /** How a wait for the server ended. */
-    public enum Wait { UP, STOPPED, TIMED_OUT }
+    public enum Wait { UP, STOPPED, BLOCKED, TIMED_OUT }
 
     /**
      * Waits until the server accepts connections, printing a dot per second. Ends early when {@code alive} says the
-     * service is no longer running (the server died: the service manager is about to restart it).
+     * service is no longer running (the server died: the service manager is about to restart it), or when
+     * {@code blocked} says the server is up but cannot go on without the user (the hub rejected its verification code).
+     * The port is asked again every second: a new installation only learns it from the hub while it activates.
      */
-    public static Wait waitForPort(int port, int seconds, java.util.function.BooleanSupplier alive) {
+    public static Wait waitForPort(java.util.function.IntSupplier port, int seconds,
+                                   java.util.function.BooleanSupplier alive, java.util.function.BooleanSupplier blocked) {
         int down = 0;
         for (int i = 0; i < seconds; i++) {
-            if (portOpen(port)) {
+            if (portOpen(port.getAsInt())) {
                 System.out.println();
                 return Wait.UP;
+            }
+            if (blocked.getAsBoolean()) {
+                System.out.println();
+                return Wait.BLOCKED;
             }
             // Twice in a row: a single "not running" can be the moment the service manager is still starting it.
             down = alive.getAsBoolean() ? 0 : down + 1;

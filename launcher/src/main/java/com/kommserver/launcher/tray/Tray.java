@@ -39,8 +39,8 @@ public final class Tray {
     /** Starts the tray on its own, the way the Startup shortcut does. */
     public static void launch(Install install) {
         try {
-            new ProcessBuilder("javaw", "-jar", install.home().resolve("launcher").resolve("komm-server-launcher.jar").toString(), "tray")
-                    .directory(install.home().toFile())
+            new ProcessBuilder("javaw", "-jar", install.getHome().resolve("launcher").resolve("komm-server-launcher.jar").toString(), "tray")
+                    .directory(install.getHome().toFile())
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .redirectError(ProcessBuilder.Redirect.DISCARD)
                     .start();

@@ -20,4 +20,6 @@ public class InstallationValidationResponse {
     private Integer port;
     private Integer tcpPort;
     private Integer mediaPort;
+    /** What players connect to (the owner's public address, else the IP the hub saw); null from an older hub. */
+    private String publicAddress;
 }

@@ -12,6 +12,9 @@
 #   3. Everything goes on the release: every file of target/jpack/release/ (parts first, the manifest
 #      jpack-<platform>.json LAST, since installs read releases/latest/download/ and a manifest must never name a part
 #      that is not there yet), the two downloads, and komm-server.jar (stable link for the hub site).
+#   4. `docker` wraps that same server jar in an image (docker/Dockerfile) and pushes it to ghcr.io/<owner>/komm-server
+#      as :<version>, and as :latest too for a normal (non-pre-)release. Docker users update with `compose pull`; they
+#      do not go through jpack.
 #
 # Manual flow (Actions -> Run workflow, tag = an existing release): rebuilds that tag and replaces its assets.
 
@@ -62,7 +65,7 @@ jobs:
 
       - uses: actions/setup-java@v5
         with:
-          distribution: temurin
+          distribution: zulu
           java-version: "21"
           cache: maven
 
@@ -116,7 +119,7 @@ jobs:
 
       - uses: actions/setup-java@v5
         with:
-          distribution: temurin
+          distribution: zulu
           java-version: "21"
           cache: maven
 
@@ -180,7 +183,7 @@ jobs:
 
       - uses: actions/setup-java@v5
         with:
-          distribution: temurin
+          distribution: zulu
           java-version: "21"
           cache: maven
 
@@ -226,3 +229,44 @@ jobs:
           bash .github/scripts/upload-parts.sh target/jpack/release
           gh release upload "$TAG" target/installer/Komm-Server-Setup.exe --clobber -R "$GITHUB_REPOSITORY"
           gh release upload "$TAG" target/jpack/release/jpack-windows-x64.json --clobber -R "$GITHUB_REPOSITORY"
+
+  docker:
+    name: Docker image (ghcr.io)
+    needs: [version, jars]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      EVENT: ${{ github.event_name }}
+      PRERELEASE: ${{ github.event.release.prerelease }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      # The same server jar every other download carries (built once, pointed at the production hub).
+      - uses: actions/download-artifact@v5
+        with:
+          name: jars
+          path: prebuilt
+
+      - name: Build and push the image
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"   # registry names must be lower case
+          echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+          docker build -f docker/Dockerfile \
+            --build-arg JAR="prebuilt/target/komm-server-$VERSION.jar" \
+            --build-arg VERSION="$VERSION" \
+            -t "$IMAGE:$VERSION" .
+          docker push "$IMAGE:$VERSION"
+
+          # :latest follows real releases only: not pre-releases, and not a manual rebuild of an old tag.
+          if [ "$EVENT" = "release" ] && [ "$PRERELEASE" != "true" ]; then
+            docker tag "$IMAGE:$VERSION" "$IMAGE:latest"
+            docker push "$IMAGE:latest"
+          fi

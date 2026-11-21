@@ -19,20 +19,20 @@ public class StatusCommand implements Callable<Integer> {
         ServiceStatus status = ServiceController.create().status();
         System.out.println(Palette.header());
 
-        if (!status.installed()) {
+        if (!status.isInstalled()) {
             System.out.println(Palette.badge(false, "service not installed"));
         } else {
-            System.out.println(Palette.badge(status.running(), status.running() ? "running" : "stopped (" + status.detail() + ")"));
+            System.out.println(Palette.badge(status.isRunning(), status.isRunning() ? "running" : "stopped (" + status.getDetail() + ")"));
         }
         int port = install.serverPort();
-        if (status.running()) {
+        if (status.isRunning()) {
             boolean open = Terminal.portOpen(port);
             System.out.println(Palette.muted("port      ") + port + "  " + (open ? Palette.success("accepting connections") : Palette.danger("not answering (yet)")));
         }
         System.out.println(Palette.muted("version   ") + Palette.cyan(install.versionOnDisk()));
         System.out.println(Palette.muted("java      ") + Runtime.version() + Palette.muted("  " + System.getProperty("java.home")));
-        System.out.println(Palette.muted("installed ") + install.home());
-        System.out.println(Palette.muted("data      ") + install.dataDir()
+        System.out.println(Palette.muted("installed ") + install.getHome());
+        System.out.println(Palette.muted("data      ") + install.getDataDir()
                 + (install.activated() ? "" : Palette.danger("  (not activated yet)")));
 
         printNextSteps(status);
@@ -43,9 +43,9 @@ public class StatusCommand implements Callable<Integer> {
     private void printNextSteps(ServiceStatus status) {
         System.out.println();
         System.out.println(Palette.muted("─".repeat(28)));
-        if (!status.installed()) {
+        if (!status.isInstalled()) {
             line("kommserver install-service", "registers the OS service (asks for the verification code once)");
-        } else if (status.running()) {
+        } else if (status.isRunning()) {
             line("kommserver update", "looks for a newer komm-server and installs it");
             line("kommserver logs -f", "follows the server log");
             line("kommserver restart", "restarts the server");

@@ -16,7 +16,7 @@ public class WindowsServiceController implements ServiceController {
     private static final String SERVICE_ID = "KommServer";
 
     private Path wrapper(Install install) {
-        return install.home().resolve("komm-server-service.exe");
+        return install.getHome().resolve("komm-server-service.exe");
     }
 
     @Override
@@ -44,15 +44,15 @@ public class WindowsServiceController implements ServiceController {
                   <stoptimeout>30 sec</stoptimeout>
                   <startmode>Automatic</startmode>
                 </service>
-                """.formatted(SERVICE_ID, install.stub(), install.dataDir(), install.dataDir(), System.getProperty("java.home"),
-                install.dataDir().resolve("logs"));
+                """.formatted(SERVICE_ID, install.getStub(), install.getDataDir(), install.getDataDir(), System.getProperty("java.home"),
+                install.getDataDir().resolve("logs"));
         try {
-            Files.createDirectories(install.dataDir().resolve("logs"));
-            Files.writeString(install.home().resolve("komm-server-service.xml"), xml);
+            Files.createDirectories(install.getDataDir().resolve("logs"));
+            Files.writeString(install.getHome().resolve("komm-server-service.xml"), xml);
         } catch (IOException e) {
             throw new IllegalStateException("Cannot write the service configuration (" + privilegeHint("install-service") + "): " + e.getMessage());
         }
-        if (status().installed()) {
+        if (status().isInstalled()) {
             return; // WinSW reads the XML at every start: rewriting it was the whole update
         }
         Processes.require(Processes.run(exe.toString(), "install"), "Registering the service", privilegeHint("install-service"));
@@ -93,7 +93,7 @@ public class WindowsServiceController implements ServiceController {
     private boolean waitFor(String state, int seconds) {
         for (int i = 0; i < seconds * 2; i++) {
             ServiceStatus status = status();
-            if (!status.installed() || status.detail().contains(state)) {
+            if (!status.isInstalled() || status.getDetail().contains(state)) {
                 return true;
             }
             try {
@@ -113,7 +113,7 @@ public class WindowsServiceController implements ServiceController {
             return ServiceStatus.notInstalled();
         }
         String state = query.output().lines().filter(l -> l.contains("STATE")).findFirst().map(String::trim).orElse("unknown");
-        return new ServiceStatus(true, state.contains("RUNNING"), state);
+        return ServiceStatus.builder().installed(true).running(state.contains("RUNNING")).detail(state).build();
     }
 
     @Override
